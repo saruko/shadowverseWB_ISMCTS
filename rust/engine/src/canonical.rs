@@ -197,12 +197,13 @@ fn player_canon(p: &PlayerState) -> String {
     if !p.ext.is_default() {
         let e = &p.ext;
         out.push_str(&format!(
-            ";R{}/{}/{}/{}/{}/{}/{:?}/{}",
+            ";R{}/{}/{}/{}/{}:{}/{}/{:?}/{}",
             b(e.rotation),
             join(&e.entered, |c| cid(*c).to_string(), ","),
             e.evolved_count,
             e.played_costs,
             e.attacked_leader_turn,
+            e.attacked_leader_prev,
             e.faith
                 .as_ref()
                 .map(|f| format!("{}:{}:{}:{}", f.iid, cid(f.card), f.value, f.granted.len()))

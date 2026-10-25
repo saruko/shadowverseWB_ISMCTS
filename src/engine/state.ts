@@ -36,7 +36,10 @@ export function findHand(state: GameState, iid: number): { player: PlayerIndex; 
 // ---- カードの性質 ----
 
 export function handCost(h: HandCard): number {
-  return Math.max(0, cardOf(h.cardId).cost + h.costMod);
+  // エンジンの hand_cost と同じ（ローテーションのコスト設定・ターン終了までの変化を含む）
+  const e = h.ext;
+  if (e?.tempCostSet != null) return Math.max(0, e.tempCostSet);
+  return Math.max(0, (e?.costSet ?? cardOf(h.cardId).cost) + h.costMod + (e?.tempCostMod ?? 0));
 }
 
 export function evolveTurnReached(state: GameState, p: PlayerIndex): boolean {

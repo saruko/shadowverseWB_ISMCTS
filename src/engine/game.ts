@@ -3,7 +3,7 @@
 // applyAction は新しい状態を返す（引数の状態は変更しない）。
 
 import type { Card } from "../cards";
-import { enhanceCost } from "./keywords";
+import { enhanceCost, enhanceLevels } from "./keywords";
 import { handCost, opponent } from "./state";
 import type { Action, AttackTarget, FollowerOnBoard, GameState, HandCard, PlayerIndex } from "./types";
 import { callEngine } from "./wasm";
@@ -49,6 +49,10 @@ export function resolveTurnEnd(prev: GameState): GameState {
 /** カードを使うときのコスト（エンハンスが使える PP なら、エンハンスのコスト） */
 export function playCost(card: Card, pp: number, hand?: HandCard): number {
   const cost = hand ? handCost(hand) : card.cost;
+  // 【エンハンス】が複数あれば払える最も大きいもの（docs/rules.md 12章）
+  const levels = enhanceLevels(card.text);
+  const usable = levels.filter((e) => pp >= e && e > cost);
+  if (levels.length > 1) return usable.length > 0 ? Math.max(...usable) : cost;
   const enhance = enhanceCost(card.text);
   return enhance !== null && pp >= enhance && enhance > cost ? enhance : cost;
 }

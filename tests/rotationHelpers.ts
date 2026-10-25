@@ -37,13 +37,19 @@ export function setup(opts: { seed?: number; deck?: string[]; oppDeck?: string[]
     const ids = names.map(rid);
     return [...ids, ...Array(40 - ids.length).fill(FILLER)];
   };
-  let s = createGame({ decks: [fill(opts.deck), fill(opts.oppDeck)], seed: opts.seed ?? 1 });
+  // 先攻（me）が deck を使うように、先攻がプレイヤー1なら入れ替えて作り直す（先攻は decks によらずシードで決まる）
+  const seed = opts.seed ?? 1;
+  let s = createGame({ decks: [fill(opts.deck), fill(opts.oppDeck)], seed });
+  if (s.first === 1) s = createGame({ decks: [fill(opts.oppDeck), fill(opts.deck)], seed });
   s = applyAction(s, { type: "mulligan", player: s.first, swap: [] });
   s = applyAction(s, { type: "mulligan", player: (1 - s.first) as PlayerIndex, swap: [] });
   const me = s.active;
   const opp = (1 - me) as PlayerIndex;
-  s.players[me].hand = [];
-  s.players[opp].hand = [];
+  // 手札を空にする。deck・oppDeck で渡したカードが初期手札に来ていたら、山札に戻す
+  for (const p of [me, opp]) {
+    for (const h of s.players[p].hand) if (h.cardId !== FILLER) s.players[p].deck.push({ iid: h.iid, cardId: h.cardId });
+    s.players[p].hand = [];
+  }
   s.players[me].pp = s.players[me].maxPp = 10;
   if (opts.turn !== undefined) s.players[me].turnCount = opts.turn;
   return { s, me, opp };

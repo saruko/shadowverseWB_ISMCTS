@@ -256,6 +256,7 @@ fn hand_json(h: &HandCard) -> Json {
                     ("costSet", opt_num(e.cost_set)),
                     ("tempCostMod", num(e.temp_cost_mod)),
                     ("tempCostSet", opt_num(e.temp_cost_set)),
+                    ("lostLastWords", Json::Bool(e.lost_last_words)),
                 ]),
             ));
         }
@@ -355,6 +356,7 @@ fn player_ext_json(e: &PlayerExt) -> Json {
         ("evolvedCount", num(e.evolved_count)),
         ("playedCosts", Json::Num(e.played_costs as f64)),
         ("attackedLeaderTurn", num(e.attacked_leader_turn)),
+        ("attackedLeaderPrev", num(e.attacked_leader_prev)),
         (
             "faith",
             e.faith
@@ -897,6 +899,7 @@ fn hand_of(v: &Json) -> R<HandCard> {
                 cost_set: opt_int(e, "costSet")?,
                 temp_cost_mod: int(e, "tempCostMod")?,
                 temp_cost_set: opt_int(e, "tempCostSet")?,
+                lost_last_words: boolean(e, "lostLastWords")?,
             },
         },
     })
@@ -934,6 +937,7 @@ fn player_ext_of(e: &Json) -> R<PlayerExt> {
         evolved_count: int(e, "evolvedCount")?,
         played_costs: int_of("playedCosts", field(e, "playedCosts")?)? as u32,
         attacked_leader_turn: int(e, "attackedLeaderTurn")?,
+        attacked_leader_prev: int(e, "attackedLeaderPrev")?,
         faith,
         leader_cap,
         leader_plus: int(e, "leaderPlus")?,

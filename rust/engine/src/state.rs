@@ -143,6 +143,8 @@ pub struct HandExt {
     /// ターン終了まで
     pub temp_cost_mod: i32,
     pub temp_cost_set: Option<i32>,
+    /// 【ラストワード】を失った（場に出たときに引き継ぐ）
+    pub lost_last_words: bool,
 }
 
 impl HandExt {
@@ -298,8 +300,9 @@ pub struct PlayerExt {
     pub evolved_count: i32,
     /// このバトル中に自分がプレイしたカードの元のコスト（ビット。31以上は31）
     pub played_costs: u32,
-    /// 自分のフォロワーがリーダーを攻撃した最後の自分のターン数（0 は無し）
+    /// 自分のフォロワーがリーダーを攻撃した最後の自分のターン数と、その前にリーダーを攻撃したターン数（0 は無し）
     pub attacked_leader_turn: i32,
+    pub attacked_leader_prev: i32,
     pub faith: Option<FaithState>,
     /// リーダーの受けるダメージの上限 (atLeast, to, 期限のターン。0 は無期限)
     pub leader_cap: Option<(i32, i32, i32)>,
@@ -835,6 +838,13 @@ impl GameState {
             acted_this_turn: false,
             ext: BoardExt::default(),
         };
+        // 手札で【融合】していた（ローテーションのカードの「これに融合していたなら」用。スターターの局面は変えない）
+        if data().uses_fused[c as usize] && from.is_some_and(|h| !h.fused_kinds.is_empty()) {
+            b.ext.fused = true;
+        }
+        if from.is_some_and(|h| h.ext.lost_last_words) {
+            b.ext.lost_last_words = true;
+        }
         if b.is_follower {
             let defense = (cd.defense + from.map(|h| h.defense_mod).unwrap_or(0)).max(0);
             b.attack = (cd.attack + from.map(|h| h.attack_mod).unwrap_or(0)).max(0);

@@ -35,8 +35,22 @@ export interface DeckCard extends CardRef {
   kept?: HandCard;
 }
 
+/** 手札のカードの、ローテーションで足した状態（エンジンの HandExt。既定値なら無い） */
+export interface HandExt {
+  /** 手札にある間に進化・超進化した自分のフォロワーの数（奥義ゲージ） */
+  gaugeEvolves: number;
+  /** 「コストをNにする」で決めた元にするコスト */
+  costSet: number | null;
+  /** ターン終了まで */
+  tempCostMod: number;
+  tempCostSet: number | null;
+  /** 【ラストワード】を失った（場に出たときに引き継ぐ） */
+  lostLastWords: boolean;
+}
+
 /** 手札のカード。手札にある間に受けた変化を持つ。 */
 export interface HandCard extends CardRef {
+  ext?: HandExt;
   costMod: number;
   attackMod: number;
   defenseMod: number;

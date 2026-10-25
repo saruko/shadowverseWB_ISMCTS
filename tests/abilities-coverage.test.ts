@@ -12,10 +12,10 @@ const missingAbilities = (cards: readonly Card[]) =>
     .filter((c) => c.text.split("\n").some((line) => line !== "" && !STATIC_LINE.test(line)) && !CARD_ABILITIES[c.id])
     .map((c) => `${c.id} ${c.name}`);
 
-/** スターターのカードと、そこから生成・参照するカード */
-const starterPool = (): Card[] => {
+/** カードと、そこから生成・参照するカード */
+const poolOf = (cards: readonly Card[]): Card[] => {
   const byId = new Map(ALL_CARDS.map((c) => [c.id, c]));
-  const pool = new Map(ALL_CARDS.filter((c) => inFormat(STARTER, c)).map((c) => [c.id, c]));
+  const pool = new Map(cards.map((c) => [c.id, c]));
   const queue = [...pool.values()];
   while (queue.length > 0) {
     for (const ref of (queue.pop() as Card).related) {
@@ -29,17 +29,27 @@ const starterPool = (): Card[] => {
   return [...pool.values()];
 };
 
+/** スターターのカードと、そこから生成・参照するカード */
+const starterPool = (): Card[] => poolOf(ALL_CARDS.filter((c) => inFormat(STARTER, c)));
+
 describe("カード能力の定義", () => {
   it("能力テキストを持つスターターの全カード（生成するトークンを含む）に定義がある", () => {
     expect(missingAbilities(starterPool())).toEqual([]);
   });
 
-  // ローテーションのカードは実装の途中なので、未定義の数を報告するだけにする（揃ったら上と同じ検査にする）
-  it("ローテーションのカードの実装状況", () => {
+  it("能力テキストを持つローテーションの全カード（生成するトークンを含む）に定義がある", () => {
     const rotation = ALL_CARDS.filter((c) => inFormat(ROTATION, c));
-    const missing = missingAbilities(rotation);
-    console.log(`ローテーション: ${rotation.length} 枚のうち、能力の定義が無いもの ${missing.length} 枚`);
     expect(rotation.length).toBeGreaterThan(0);
+    expect(missingAbilities(poolOf(rotation))).toEqual([]);
+  });
+
+  it("ローテーションのカードが与える全クレストに定義があり、定義の書けなかった能力が無い", () => {
+    const ids = new Set(poolOf(ALL_CARDS.filter((c) => inFormat(ROTATION, c))).map((c) => c.id));
+    expect(ALL_CRESTS.filter((c) => ids.has(c.source) && !CREST_ABILITIES[c.id]).map((c) => c.name)).toEqual([]);
+    const unimplemented = Object.entries(CARD_ABILITIES)
+      .filter(([, a]) => a.unimplemented !== undefined)
+      .map(([k]) => `${k} ${ALL_CARDS.find((c) => c.id === k)?.name}`);
+    expect(unimplemented).toEqual([]);
   });
 
   it("スターターのカードが与える全クレストに定義がある", () => {

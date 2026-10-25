@@ -120,13 +120,49 @@ export function modeSourceCard(state: GameState): string | null {
   return modeCards.get(canonicalJson(frame.effects[frame.pc])) ?? null;
 }
 
-/** モードの選択肢の文言（そのカードの能力テキストの「（1）…」の行） */
+/** 能力テキストの「（1）…」の行を、【モード】ごとにまとめる（（1）から番号が振り直されたら次のモード） */
+export function modeLineGroups(text: string): string[][] {
+  const groups: string[][] = [];
+  for (const l of text.split("\n").filter((x) => /^（\d）/.test(x))) {
+    if (l.startsWith("（1）") || groups.length === 0) groups.push([]);
+    groups[groups.length - 1]?.push(l);
+  }
+  return groups;
+}
+
+/** n 個から k 個を選ぶ組み合わせ（helpers.ts の modePick と同じ順） */
+function combinations(n: number, k: number): number[][] {
+  const out: number[][] = [];
+  const rec = (start: number, picked: number[]) => {
+    if (picked.length === k) {
+      out.push(picked);
+      return;
+    }
+    for (let i = start; i < n; i++) rec(i + 1, [...picked, i]);
+  };
+  rec(0, []);
+  return out;
+}
+
+/** モードの選択肢の文言（そのカードの能力テキストの「（1）…」の行。「2つを選んで」は行の組み合わせ） */
 export function modeLabels(state: GameState): string[] {
   const pending = state.pending;
   if (pending?.kind !== "mode") return [];
   const cardId = modeSourceCard(state);
   const text = cardId ? cardOf(cardId).text : "";
-  const lines = text.split("\n").filter((l) => /^（\d）/.test(l));
+  // カードの何番目の【モード】か（能力のデータの並び順）
+  const frame = state.stack[state.stack.length - 1];
+  const keys: string[] = [];
+  if (cardId) collectModes(abilitiesOf(cardId), (m) => keys.push(canonicalJson(m)));
+  const k = frame ? Math.max(0, keys.indexOf(canonicalJson(frame.effects[frame.pc]))) : 0;
+  const groups = modeLineGroups(text);
+  const lines = groups[Math.min(k, groups.length - 1)] ?? [];
+  if (pending.options !== lines.length) {
+    for (let size = 2; size <= lines.length; size++) {
+      const combos = combinations(lines.length, size);
+      if (combos.length === pending.options) return combos.map((c) => c.map((i) => lines[i]).join("＋"));
+    }
+  }
   return Array.from({ length: pending.options }, (_, i) => lines[i] ?? `選択肢${i + 1}`);
 }
 

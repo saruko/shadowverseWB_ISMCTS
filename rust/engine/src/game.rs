@@ -428,16 +428,62 @@ fn spell_has_targets(
                 }
             })
     };
-    if chooses().next().is_none() {
+    // ローテーションのカードは、条件で分かれた先の「選ぶ」も見る（条件は今の局面で判定する。スターターの判定は変えない）
+    let spell_effects = || {
+        list.iter()
+            .filter(|a| a.trigger.on() == On::Spell)
+            .map(|a| a.effects.as_slice())
+    };
+    let nested = !card(cid).starter
+        && spell_effects().any(|e| e.iter().any(|x| matches!(x, Effect::If { .. })));
+    if chooses().next().is_none() && !nested {
         return true;
     }
     // 手札から除いた局面（合法手の列挙 1 回につき 1 度だけ複製し、除いたカードは戻す）
     let t = scratch.get_or_insert_with(|| s.clone());
     let removed = t.players[p].hand.make_mut().remove(hi);
-    let ctx = Ctx::new(p, removed.iid);
-    let ok = chooses().all(|from| !choose_candidates(t, &ctx, from).is_empty());
+    let mut ctx = Ctx::new(p, removed.iid);
+    if nested {
+        // プレイしたときと同じ条件で判定する（エンハンス・奥義ゲージ）
+        let cd = card(cid);
+        let pl = &t.players[p];
+        let (_, cost) = play_form(cd, cid, pl.pp, &removed);
+        ctx.enhanced = form == PlayForm::Normal
+            && cd.enhance_levels.contains(&cost)
+            && cost > hand_cost(&removed);
+        ctx.ext.paid_cost = cost;
+        ctx.ext.gauge = Some(pl.turn_count + removed.ext.gauge_evolves);
+        ctx.ext.source_card = Some(cid);
+        ctx.ext.source_cost = Some(hand_cost(&removed));
+    }
+    let mut ok = chooses().all(|from| !choose_candidates(t, &ctx, from).is_empty());
+    if ok && nested {
+        ok = spell_effects().all(|e| branch_chooses_ok(t, &ctx, e));
+    }
     t.players[p].hand.make_mut().insert(hi, removed);
     ok
+}
+
+/// 条件で分かれた先（今の局面で判定した側）の「選ぶ」に対象がいるか
+fn branch_chooses_ok(s: &GameState, ctx: &Ctx, effects: &[Effect]) -> bool {
+    effects.iter().all(|e| match e {
+        Effect::If {
+            cond,
+            then,
+            otherwise,
+        } => {
+            let branch: &[Effect] = if eval_cond(s, ctx, cond) {
+                then
+            } else {
+                otherwise.as_deref().unwrap_or(&[])
+            };
+            branch.iter().all(|x| match x {
+                Effect::Choose { from, .. } => !choose_candidates(s, ctx, from).is_empty(),
+                _ => true,
+            }) && branch_chooses_ok(s, ctx, branch)
+        }
+        _ => true,
+    })
 }
 
 fn can_play(s: &GameState, p: PlayerIndex, hi: usize, scratch: &mut Option<GameState>) -> bool {
@@ -542,8 +588,9 @@ fn can_evolve(s: &GameState, f: &OnBoard, kind: EvolveKind) -> bool {
     }
 }
 
-fn act_ability(cid: CardIdx) -> Option<(&'static Ability, i32)> {
-    abilities_of(cid).abilities.iter().find_map(|a| {
+/// 場のアミュレットの【アクト】（結晶なら結晶の能力。能力を失っていれば無い）
+fn act_ability(c: &OnBoard) -> Option<(&'static Ability, i32)> {
+    c.abilities().find_map(|a| {
         if let Trigger::Act { cost } = a.trigger {
             Some((a, cost))
         } else {
@@ -775,7 +822,7 @@ pub fn legal_actions(s: &GameState) -> Vec<Action> {
             if can_evolve(s, c, EvolveKind::SuperEvolve) {
                 actions.push(Action::SuperEvolve(c.iid));
             }
-        } else if let Some((_, cost)) = act_ability(c.card) {
+        } else if let Some((_, cost)) = act_ability(c) {
             if !c.acted_this_turn && pl.pp >= cost {
                 actions.push(Action::Act(c.iid));
             }
@@ -876,7 +923,7 @@ pub fn is_legal(s: &GameState, action: &Action) -> bool {
                 .unwrap_or(false)
         }
         Action::Act(iid) => match pl.board.iter().find(|c| c.iid == *iid) {
-            Some(a) if !a.is_follower => match act_ability(a.card) {
+            Some(a) if !a.is_follower => match act_ability(a) {
                 Some((_, cost)) => !a.acted_this_turn && pl.pp >= cost,
                 None => false,
             },
@@ -997,6 +1044,8 @@ fn apply_play(s: &mut GameState, iid: Iid) {
         && cd.enhance_levels.contains(&cost)
         && cost > hand_cost(&h)
         && !suppressed;
+    // ファンファーレ・エンハンスが働かないときは、エンハンスではなく元のコストで払う（docs/rules.md 12章）
+    let cost = if suppressed { hand_cost(&h) } else { cost };
     pl.pp -= cost;
     pl.combo += 1;
     if pl.ext.rotation {
@@ -1051,6 +1100,7 @@ fn apply_play(s: &mut GameState, iid: Iid) {
         // 結晶: カウントダウンアミュレットとして場に出る
         b.is_follower = false;
         b.ext.crystal = true;
+        b.keywords = Kw::EMPTY;
         b.countdown = abilities_of(cid)
             .crystallize
             .as_ref()
@@ -1086,7 +1136,10 @@ fn apply_attack(s: &mut GameState, attacker_iid: Iid, target: AttackTarget) {
     };
     if target.is_none() && s.players[p].ext.rotation {
         let pl = &mut s.players[p];
-        pl.ext.attacked_leader_turn = pl.turn_count;
+        if pl.ext.attacked_leader_turn != pl.turn_count {
+            pl.ext.attacked_leader_prev = pl.ext.attacked_leader_turn;
+            pl.ext.attacked_leader_turn = pl.turn_count;
+        }
     }
     let a = &mut s.players[p].board.make_mut()[ai];
     a.attacks_this_turn += 1;
@@ -1273,7 +1326,7 @@ fn apply_act(s: &mut GameState, iid: Iid) {
     if s.players[p].board[ai].is_follower {
         return;
     }
-    let Some((ability, cost)) = act_ability(s.players[p].board[ai].card) else {
+    let Some((ability, cost)) = act_ability(&s.players[p].board[ai]) else {
         return;
     };
     s.players[p].pp -= cost;

@@ -25,7 +25,13 @@ pub fn card_matches(s: &GameState, ctx: &Ctx, iid: Iid, filter: Option<&CardFilt
     };
     let cd = card(cid);
     if let Some(t) = f.ctype {
-        if cd.ctype != t {
+        // 場の結晶はアミュレット（docs/rules.md 12章）
+        let ctype = if board.is_some_and(|b| b.ext.crystal) {
+            CardType::Amulet
+        } else {
+            cd.ctype
+        };
+        if ctype != t {
             return false;
         }
     }
@@ -628,7 +634,7 @@ pub fn eval_cond(s: &GameState, ctx: &Ctx, c: &Condition) -> bool {
             } else {
                 pl.turn_count
             };
-            prev > 0 && pl.ext.attacked_leader_turn == prev
+            prev > 0 && (pl.ext.attacked_leader_turn == prev || pl.ext.attacked_leader_prev == prev)
         }
         Condition::PlayedCostsCover { from, to } => {
             (*from..=*to).all(|c| pl.ext.played_costs & (1u32 << c.clamp(0, 31)) != 0)
@@ -1885,6 +1891,10 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
             for id in targets!(target) {
                 if is_leader(id) {
                     heal_leader(s, leader_owner(id), amount);
+                } else if let Some((q, i)) = s.find_follower(id) {
+                    // フォロワーの回復は最大体力まで（docs/rules.md 12章）
+                    let f = &mut s.players[q].board.make_mut()[i];
+                    f.defense = f.max_defense.min(f.defense + amount.max(0));
                 }
             }
         }
@@ -2641,6 +2651,8 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
             for id in targets!(target) {
                 if let Some(b) = s.board_card_mut(id) {
                     b.ext.lost_last_words = true;
+                } else if let Some((q, i)) = s.find_hand(id) {
+                    s.players[q].hand.make_mut()[i].ext.lost_last_words = true;
                 }
             }
         }

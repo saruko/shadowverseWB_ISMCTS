@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ALL_CARDS } from "../src/cards";
 import { abilitiesOf, applyAction, createGame, newHandCard, type Action, type GameState, type PlayerIndex } from "../src/engine";
-import { describeAction, modeLabels, modeSourceCard } from "../src/ui/describe";
+import { describeAction, modeLabels, modeLineGroups, modeSourceCard } from "../src/ui/describe";
 
 const id = (name: string): string => {
   const card = ALL_CARDS.find((c) => c.name === name);
@@ -45,8 +45,12 @@ describe("行動の説明（describeAction）", () => {
   });
 });
 
-/** 能力に【モード】を持つカード */
-const MODE_CARDS = ALL_CARDS.filter((c) => JSON.stringify(abilitiesOf(c.id)).includes('"op":"mode"'));
+/** プレイ（スペル）したときに【モード】を選ぶカード（能力の効果の並びにそのまま【モード】がある） */
+const MODE_CARDS = ALL_CARDS.filter((c) =>
+  (abilitiesOf(c.id)?.abilities ?? []).some(
+    (a) => (a.trigger.on === "fanfare" || a.trigger.on === "spell") && a.effects.some((e) => e.op === "mode"),
+  ),
+);
 
 describe("モードの選択肢の文言", () => {
   it("【モード】を持つカードがある", () => {
@@ -57,11 +61,16 @@ describe("モードの選択肢の文言", () => {
     const { s, me } = setup();
     const h = newHandCard(s, card.id);
     s.players[me].hand.push(h);
+    // 【エンハンス】で「すべて」にならないよう、PP はコストちょうど
+    s.players[me].pp = card.cost;
     const t = applyAction(s, { type: "play", iid: h.iid });
     expect(t.pending?.kind).toBe("mode");
     expect(modeSourceCard(t)).toBe(card.id);
-    const lines = card.text.split("\n").filter((l) => /^（\d）/.test(l));
-    expect(modeLabels(t)).toEqual(lines);
+    const lines = modeLineGroups(card.text)[0] ?? [];
+    const labels = modeLabels(t);
+    // 選択肢の文言は能力テキストの行（「2つを選んで」は行の組み合わせ）
+    if (labels.length === lines.length) expect(labels).toEqual(lines);
+    else for (const l of labels) expect(l.split("＋").every((x) => lines.includes(x))).toBe(true);
   });
 
   it("行動の説明にカード名と選んだモードが出る", () => {

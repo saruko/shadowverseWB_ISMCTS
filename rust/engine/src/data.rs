@@ -1428,42 +1428,51 @@ pub struct Data {
     pub zone_hand: Vec<bool>,
     pub zone_deck: Vec<bool>,
     pub uses_gauge: Vec<bool>,
+    /// 「これに【融合】していた」を使う
+    pub uses_fused: Vec<bool>,
 }
 
-fn cond_uses_gauge(c: &Condition) -> bool {
-    match c {
-        Condition::Ultimate { .. } => true,
-        Condition::Not { cond } => cond_uses_gauge(cond),
-        Condition::And { conds } => conds.iter().any(cond_uses_gauge),
-        _ => false,
-    }
+fn cond_has(c: &Condition, pred: fn(&Condition) -> bool) -> bool {
+    pred(c)
+        || match c {
+            Condition::Not { cond } => cond_has(cond, pred),
+            Condition::And { conds } => conds.iter().any(|x| cond_has(x, pred)),
+            _ => false,
+        }
 }
 
-fn effects_use_gauge(list: &[Effect]) -> bool {
+/// 効果の並び（入れ子を含む）に pred に合う条件があるか
+fn effects_have_cond(list: &[Effect], pred: fn(&Condition) -> bool) -> bool {
     list.iter().any(|e| match e {
         Effect::If {
             cond,
             then,
             otherwise,
         } => {
-            cond_uses_gauge(cond)
-                || effects_use_gauge(then)
-                || otherwise.as_deref().is_some_and(effects_use_gauge)
+            cond_has(cond, pred)
+                || effects_have_cond(then, pred)
+                || otherwise
+                    .as_deref()
+                    .is_some_and(|o| effects_have_cond(o, pred))
         }
         Effect::Mode { options, all_if } => {
-            all_if.as_ref().is_some_and(cond_uses_gauge)
-                || options.iter().any(|o| effects_use_gauge(o))
+            all_if.as_ref().is_some_and(|c| cond_has(c, pred))
+                || options.iter().any(|o| effects_have_cond(o, pred))
         }
         Effect::RandomEffects { options, .. } | Effect::CycleEffects { options } => {
-            options.iter().any(|o| effects_use_gauge(o))
+            options.iter().any(|o| effects_have_cond(o, pred))
         }
-        Effect::Repeat { effects, .. } => effects_use_gauge(effects),
+        Effect::Repeat { effects, .. } => effects_have_cond(effects, pred),
         Effect::EarthRite { then, .. }
         | Effect::Necromancy { then, .. }
         | Effect::PayPp { then, .. }
-        | Effect::SpendFaith { then, .. } => effects_use_gauge(then),
+        | Effect::SpendFaith { then, .. } => effects_have_cond(then, pred),
         _ => false,
     })
+}
+
+fn effects_use_gauge(list: &[Effect]) -> bool {
+    effects_have_cond(list, |c| matches!(c, Condition::Ultimate { .. }))
 }
 
 impl Data {
@@ -1562,6 +1571,14 @@ pub fn load(json: &str) -> Data {
         .iter()
         .map(|a| a.abilities.iter().any(|x| effects_use_gauge(&x.effects)))
         .collect();
+    let uses_fused = abilities
+        .iter()
+        .map(|a| {
+            a.abilities
+                .iter()
+                .any(|x| effects_have_cond(&x.effects, |c| matches!(c, Condition::Fused)))
+        })
+        .collect();
     Data {
         cards,
         abilities,
@@ -1579,6 +1596,7 @@ pub fn load(json: &str) -> Data {
         zone_hand,
         zone_deck,
         uses_gauge,
+        uses_fused,
     }
 }
 
