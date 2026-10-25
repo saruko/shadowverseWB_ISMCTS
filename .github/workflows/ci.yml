@@ -3,7 +3,6 @@ name: CI
 on:
   pull_request:
   push:
-    branches-ignore: [main]
 
 jobs:
   # 画面・スクリプト（TypeScript）。エンジンと AI は WASM（npm test の前に npm run wasm で作る）
