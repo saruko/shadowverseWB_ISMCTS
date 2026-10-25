@@ -1,7 +1,7 @@
 # Shadowverse: Worlds Beyond Simulator
 
 シャドウバース ワールズビヨンド（Shadowverse: Worlds Beyond）の対戦シミュレータです。
-ブラウザだけで動作し、サーバーなしで GitHub Pages に公開します。
+ブラウザだけで動作します（サーバーなし）。このリポジトリでは GitHub Pages には公開しません。
 
 > **非公式ファンプロジェクト**です。Cygames 社および関連企業とは一切関係ありません。
 > ゲーム名・カード名・カードテキストの権利は各権利者に帰属します。
@@ -29,7 +29,7 @@
 - UI: 軽量ライブラリ（Preact 想定）＋ CSS のみ
 - テスト: Vitest
 - AI: ルールベース → MCTS（Web Worker 上で実行）
-- 配備: GitHub Actions → GitHub Pages
+- 配備: なし（このリポジトリでは GitHub Pages に公開しない。2026-10-25 にデプロイのワークフローを外した）
 
 ## ディレクトリ構成（予定）
 
@@ -83,8 +83,8 @@ npm run pack-run   # PC で回した 1 回分の出力（自己対戦・モデ�
 
 ## 公開
 
-`main` ブランチへの push で GitHub Actions がビルドし GitHub Pages へデプロイします。
-Vite の `base` はリポジトリ名（`/Shadowverse-Wb-Sim/`）に合わせます。
+このリポジトリでは GitHub Pages に公開しません（元のリポジトリから引き継いだデプロイのワークフローは 2026-10-25 に外しました）。
+公開するなら、ワークフローを戻し、Settings → Pages の Source を「GitHub Actions」にして、Vite の `base`（今は元のリポジトリ名の `/Shadowverse-Wb-Sim/`）をこのリポジトリ名に変えます。
 
 また `main` への push ごとに「自動対戦」ワークフロー（`.github/workflows/auto-match.yml`）が、探索 AI どうし（リノセウスエルフだけリノセウス用 AI）でデフォルトデッキの総当たり（1組 20 試合、8 並列）を回し、通算勝率と対戦表を Actions の実行結果のサマリーに出します。Actions タブの Run workflow から試合数と AI を変えて手動でも実行できます。
 

@@ -7,7 +7,7 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 
 - フォーマット: スターター / カードプール: 第1弾「伝説の幕開け」＋ベーシックのみ
 - ローテーション対応（ユーザー確認済み 2026-10-25）: カードデータに今のローテーションのカード（is_include_rotation、能力は今のもの）も入れ、フォーマット `ROTATION`（`src/cards/format.ts`）を足した。能力はローテーションの全カード・トークン・クレストに定義した（2026-10-25。`src/cards/abilities/rotation/`、書き方は `docs/rotation-authoring.md`）。スターターの挙動（ゴールデンテスト・物差し）は変えない: ランダムなデッキ・環境の案はスターターのカード（エンジンのデータの `starter`）から作る
-- サーバーなし。静的サイトとして GitHub Pages で公開
+- サーバーなし。静的サイト（このリポジトリでは GitHub Pages に公開しない。ユーザー判断 2026-10-25）
 - **画像・音源・フォント等のアセットは一切使わない**（CDN 読み込み、絵文字依存の装飾、base64 埋め込み画像も不可）。表現は CSS とテキストのみ。クラスの識別は色＋文字で行う
 - スタック: TypeScript(strict) + Vite + 軽量UI(Preact想定) + Vitest。エンジンと AI は Rust（`rust/`）で、ブラウザでは WASM にして使う
 - AI: まずルールベース、次に MCTS。重い思考は Web Worker で実行
@@ -79,7 +79,7 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 
 - このリポジトリは wistery-k/Shadowverse-Wb-Sim を元にした改造版で、push 先は https://github.com/saruko/shadowverseWB_ISMCTS の `main`（ユーザー確認済み 2026-10-25）。作業が一区切りついたら push する
 - 元のリポジトリの作業ブランチ（`claude/next-steps`）や PR の運用はこのリポジトリでは使わない
-- GitHub Pages は GitHub Actions でビルド・デプロイ。Vite の `base` は元のリポジトリ名の `/Shadowverse-Wb-Sim/` のまま（このリポジトリで公開するなら変える）
+- GitHub Pages には公開しない（ユーザー判断 2026-10-25）。元のリポジトリから引き継いだデプロイのワークフロー（`deploy.yml`）は、Pages が無効で毎回失敗していたので外した。Vite の `base` は元のリポジトリ名の `/Shadowverse-Wb-Sim/` のまま（公開するなら変える）
 - ソースは Google ドライブ（ストリーミング）にあるが、`npm ci` などの大量の書き込みはドライブ上だと中身が空になるので、ビルド・テストはローカルに写したコピーで行う
 
 ## 権利・表記
