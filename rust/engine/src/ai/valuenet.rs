@@ -29,8 +29,9 @@ pub const ZONES: [&str; 14] = [
 ];
 /// 数値の入力（ZONES と同じく、モデルはこの並びの部分列を持つ）。
 /// "after" より後ろは場のフォロワーの合計とキーワードを持つ数（同上）。
-/// 最後の "imagined" は、探索が相手のターンを読んだ後の想像の局面か（ValuePhase::Imagined。docs/ai-notes.md「読みの中の相手のずれを学習で直す」）
-pub const SCALARS: [&str; 34] = [
+/// "imagined" は、探索が相手のターンを読んだ後の想像の局面か（ValuePhase::Imagined。docs/ai-notes.md「読みの中の相手のずれを学習で直す」）。
+/// その後ろはローテーションで足した、このバトル中の記録（連携の数・進化した回数・信仰・プレイしたカードのコストの種類の数。スターターの対戦では 0）
+pub const SCALARS: [&str; 42] = [
     "myHp",
     "oppHp",
     "myMaxPp",
@@ -65,6 +66,14 @@ pub const SCALARS: [&str; 34] = [
     "myAmbush",
     "oppAmbush",
     "imagined",
+    "myLink",
+    "oppLink",
+    "myEvolved",
+    "oppEvolved",
+    "myFaith",
+    "oppFaith",
+    "myCosts",
+    "oppCosts",
 ];
 
 /// 場のカード 1 枚ごとの数値の入力（場のカードのネットワーク。valueNet.ts の BOARD_FEATURES。モデルはこの並びの部分列を持つ）。
@@ -593,6 +602,17 @@ fn encode(net: &ValueNet, s: &GameState, p: PlayerIndex, phase: ValuePhase, acc:
         m[5] / 2.0,
         o[5] / 2.0,
         b(phase == ValuePhase::Imagined),
+        me.ext.entered.len() as f64 / 20.0,
+        opp.ext.entered.len() as f64 / 20.0,
+        me.ext.evolved_count as f64 / 5.0,
+        opp.ext.evolved_count as f64 / 5.0,
+        me.ext.faith.as_ref().map_or(0.0, |f| f.value as f64 / 10.0),
+        opp.ext
+            .faith
+            .as_ref()
+            .map_or(0.0, |f| f.value as f64 / 10.0),
+        me.ext.played_costs.count_ones() as f64 / 10.0,
+        opp.ext.played_costs.count_ones() as f64 / 10.0,
     ];
     for (j, &x) in scalars.iter().enumerate() {
         if let Some(k) = net.scalar_slot[j] {

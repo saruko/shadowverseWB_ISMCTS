@@ -75,6 +75,15 @@ export const VALUE_SCALARS = [
   "myAmbush",
   "oppAmbush",
   "imagined",
+  // ローテーションで足した、このバトル中の記録（rust/engine/src/ai/valuenet.rs の SCALARS。スターターの対戦では 0）
+  "myLink",
+  "oppLink",
+  "myEvolved",
+  "oppEvolved",
+  "myFaith",
+  "oppFaith",
+  "myCosts",
+  "oppCosts",
 ] as const;
 
 /**

@@ -7,8 +7,10 @@
 //   npm run td -- init --out m0.json [--hidden 32] [--seed 1] [--a 0.08] [--base stripped|current] [--inputs v2|v1]
 //     L = 0 のモデルを作る（--base current なら今の評価関数をそのまま出発点にする。--inputs v1 なら場の攻撃力・体力等を足す前の入力）。
 //     --hidden 256,32 のように並べると隠れ層を重ねる（最初の層の後ろは全結合。docs/ai-notes.md「大きなネットワークで一から学び直す」）
-//   npm run td -- extend --model data/value-net.json --out m0.json
-//     モデルの入力を今の並び（VALUE_ZONES・VALUE_SCALARS）に広げる。足した入力の重みは 0 なので、補正は元のモデルと同じ
+//   npm run td -- extend --model data/value-net.json --out m0.json [--vocab all] [--vocabDecks a.txt,b.txt]
+//     モデルの入力を今の並び（VALUE_ZONES・VALUE_SCALARS）に広げる。足した入力の重みは 0 なので、補正は元のモデルと同じ。
+//     --vocab all なら、vocab に無い今のカード・クレスト（ローテーションのカード等）も vocab の後ろに足す（その後 td attr で属性の分を埋める）。
+//     --vocabDecks なら、足すのはそのデッキのカードと、トークン・クレストだけ
 //   npm run td -- widen --model m.json --hidden 256,32 --out w0.json [--seed 1]
 //     隠れ層 1 つのモデルを、補正を変えずに大きい形に移す。最初の層の先頭に元の層を写し、足した部分は乱数で始めて、
 //     2 つ目の層は元の層の値をそのまま通す（足した部分からの重みは 0）。docs/ai-notes.md「今のモデルを広げて学習を続ける」
@@ -78,6 +80,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { ALL_CARDS, ALL_CRESTS } from "../src/cards";
+import { parseDeckText } from "../src/cards/deck";
 import { attributeMatrix, attributeNames, attributeRow, choleskyFactor, choleskySolve, normalEquations, ridgePenalty, ridgeSolve, rowCanOccur, sparseRows } from "./cardAttrs";
 import { nextRandom, type PlayerIndex } from "../src/engine";
 import {
@@ -225,13 +228,30 @@ function extend(args: Args): number {
   const out = need(args, "out");
   const H = model.hidden;
   const V = model.vocab.length;
+  // --vocab all なら、今のカード・クレストのうち vocab に無いものを後ろに足す（ローテーションのカード等。足した行は 0）。
+  // --vocabDecks なら、そのデッキのカードとトークン・クレストだけを足す（モデルを小さくする）
+  const decks = args.get("vocabDecks");
+  const deckCards = new Set<string>();
+  for (const f of decks?.split(",") ?? []) {
+    const r = parseDeckText(readFileSync(f, "utf8"), f);
+    if (!r.deck) throw new Error(`${f}: ${r.errors.join(" / ")}`);
+    for (const id of r.deck.cards) deckCards.add(id);
+  }
+  const wanted = (id: string): boolean => {
+    if (args.get("vocab") === "all") return true;
+    if (!decks) return false;
+    return id.startsWith("crest:") || ALL_CARDS.find((c) => c.id === id)?.set === "token" || deckCards.has(id);
+  };
+  const added = defaultVocab().filter((id) => !model.vocab.includes(id) && wanted(id));
+  if (added.length > 0 && model.board) throw new Error("場のカードのネットワークのあるモデルの vocab は広げられません");
+  const vocab = [...model.vocab, ...added];
   const zones: string[] = [...VALUE_ZONES];
   const scalars: string[] = [...VALUE_SCALARS];
   // 新しい入力の添字ごとに、元のモデルの入力の添字（無ければ -1）
   const from: number[] = [];
   for (const z of zones) {
     const k = model.zones.indexOf(z);
-    for (let i = 0; i < V; i++) from.push(k < 0 ? -1 : k * V + i);
+    for (let i = 0; i < vocab.length; i++) from.push(k < 0 || i >= V ? -1 : k * V + i);
   }
   for (const sc of scalars) {
     const k = model.scalars.indexOf(sc);
@@ -241,8 +261,10 @@ function extend(args: Args): number {
   for (const k of from) for (let j = 0; j < H; j++) w1.push(k < 0 ? 0 : model.w1[k * H + j]!);
   // 場のカードのネットワークの出力の重み（入力の末尾）はそのまま
   w1.push(...model.w1.slice(baseInputSize(model) * H));
-  writeFileSync(out, JSON.stringify({ ...withoutAttr(model), zones, scalars, w1 }));
-  console.log(`${out}: 入力 ${baseInputSize(model)} → ${from.length}（足した ${from.filter((k) => k < 0).length} 個の重みは 0）`);
+  writeFileSync(out, JSON.stringify({ ...withoutAttr(model), vocab, zones, scalars, w1 }));
+  console.log(
+    `${out}: 入力 ${baseInputSize(model)} → ${from.length}（足した ${from.filter((k) => k < 0).length} 個の重みは 0。vocab に足したカード・クレスト ${added.length}）`,
+  );
   return 0;
 }
 

@@ -1,12 +1,14 @@
 //! マリガンの設定 A と B を、同じシードの試合で打ち比べる（判断が違った試合だけが差を生む対照比較）。
 //!
-//!   svwb mulligan-compare [--games 50] [--start 0] [--seed 1] [--a '<設定JSON>'] [--b '<設定JSON>']
+//!   svwb mulligan-compare [--games 50] [--start 0] [--seed 1] [--a '<設定JSON>'] [--b '<設定JSON>'] [--opp '<設定JSON>'] [--decks <デッキ>,…]
 //!
-//! 7 デッキ × 相手 6 デッキ × 席 2 × games のシードの組ごとに、自分だけ A と B の設定で打つ（相手は今の探索 AI）。
+//! 7 デッキ × 相手 6 デッキ × 席 2 × games のシードの組ごとに、自分だけ A と B の設定で打つ（相手は今の探索 AI。--opp でその設定）。
+//! --decks なら、比較用の 7 デッキの代わりに並べたデッキ（デフォルトデッキの名前・キーか、デッキのテキストファイル）の全組で打つ。
 //! A と B のマリガンの判断が同じなら試合はまったく同じになる（マリガンが試合の乱数を進めないとき）ので、
 //! B の試合はマリガンの判断が違ったときだけ最後まで打つ。勝ち負けが入れ替わった組を数える（McNemar 検定）。
 
 use super::compare_decks;
+use super::deck_compare::read_deck;
 use super::options::compare_options;
 use super::parallel::parallel_map;
 use super::{fixed, seconds_since};
@@ -23,6 +25,7 @@ use std::time::Instant;
 /// stop が自分のマリガンと同じなら、そこで打ち切って勝ち負けは None
 fn play(
     subject: &SearchOptions,
+    opp_opts: &SearchOptions,
     decks: [&Deck; 2],
     subject_seat: usize,
     seed: u32,
@@ -31,7 +34,7 @@ fn play(
     reset_lethal();
     reset_exact_lethal_cache();
     let mut me = SearchAgent::new(subject.clone());
-    let mut opp = SearchAgent::new(SearchOptions::default());
+    let mut opp = SearchAgent::new(opp_opts.clone());
     let mut s = create_game([&decks[0].cards, &decks[1].cards], seed);
     let mut rng = Rng::new(seed ^ 0x9e3779b9);
     let mut mulligan: Option<Action> = None;
@@ -94,7 +97,17 @@ pub fn main(argv: &[String]) -> Result<(), String> {
     let b_text = arg(argv, "--b").unwrap_or("{}");
     let a = compare_options(a_text).map_err(|e| format!("A の設定: {e}"))?;
     let b = compare_options(b_text).map_err(|e| format!("B の設定: {e}"))?;
-    let decks = compare_decks();
+    let opp_text = arg(argv, "--opp").unwrap_or("{}");
+    let opp = compare_options(opp_text).map_err(|e| format!("相手の設定: {e}"))?;
+    let decks: Vec<&'static Deck> = match arg(argv, "--decks") {
+        None => compare_decks(),
+        Some(list) => list
+            .split(',')
+            .map(str::trim)
+            .filter(|x| !x.is_empty())
+            .map(|name| read_deck(name).map(|d| &*Box::leak(Box::new(d))))
+            .collect::<Result<_, _>>()?,
+    };
     let n = decks.len();
     let mut tasks: Vec<(usize, usize, usize, u32)> = Vec::new();
     for k in start..start + games {
@@ -117,9 +130,9 @@ pub fn main(argv: &[String]) -> Result<(), String> {
             } else {
                 [decks[j], decks[i]]
             };
-            let (won_a, mull_a) = play(&a, ds, seat, seed, None);
+            let (won_a, mull_a) = play(&a, &opp, ds, seat, seed, None);
             let won_a = won_a.expect("A の勝ち負け");
-            let (won_b, _) = play(&b, ds, seat, seed, Some(&mull_a));
+            let (won_b, _) = play(&b, &opp, ds, seat, seed, Some(&mull_a));
             Pair {
                 deck: i,
                 a: won_a,
@@ -134,7 +147,7 @@ pub fn main(argv: &[String]) -> Result<(), String> {
         },
     );
     println!(
-        "A {a_text} vs B {b_text}（相手は今の探索 AI、seed {base}、games {start}〜{}）",
+        "A {a_text} vs B {b_text}（相手は探索 AI {opp_text}、seed {base}、games {start}〜{}）",
         start + games - 1
     );
     println!("| デッキ | 組 | 判断が違った組 | A で勝ち・B で負け | A で負け・B で勝ち | A の勝率 | B の勝率 | 差 | z |");
