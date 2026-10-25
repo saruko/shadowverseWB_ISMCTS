@@ -19,7 +19,7 @@ export {
   type GameConfig,
 } from "./game";
 export { invariantViolations } from "./invariants";
-export { parseStaticAbilities, enhanceCost } from "./keywords";
+export { parseStaticAbilities, enhanceCost, enhanceLevels } from "./keywords";
 export { abilitiesOf, crestOf, staticOf } from "./registry";
 export { newBoardCard, newHandCard, leaderId, findBoard, findHand, handCost, evolveTurnReached, superEvolveTurnReached } from "./state";
 export { nextRandom, rngFrom, shuffle, type Rng } from "./rng";

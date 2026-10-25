@@ -153,6 +153,7 @@ const tribeNames: Record<string, string> = {};
 /** 公式のパック名（報告にだけ使う） */
 const setNames: Record<string, string> = {};
 const specificEffects = new Map<string, { type: number; text: string }>();
+const specificCosts = new Map<string, number>();
 
 const files = readdirSync(RAW_DIR).filter((f) => f.endsWith(".json")).sort();
 if (files.length === 0) throw new Error(`${RAW_DIR} に JSON がありません`);
@@ -164,6 +165,7 @@ for (const file of files) {
     Object.assign(setNames, data.card_set_names ?? {});
     for (const [id, e] of Object.entries(data.specific_effect_card_info)) {
       specificEffects.set(id, { type: e.specific_effect_type, text: e.skill_text });
+      specificCosts.set(id, e.cost);
     }
     for (const [id, { common }] of Object.entries(data.card_details)) {
       // スターターのセットのカードは当時の能力（starter_card）を使う。それ以外は今の能力。IDは通常版のものを使う。
@@ -238,6 +240,9 @@ const overrides = JSON.parse(readFileSync(OVERRIDES_FILE, "utf8")) as Record<str
 const crests: Crest[] = [];
 const crestOf = new Map<string, string>();
 const unsupportedEffects = new Set<string>();
+/** 結晶（2）・アクセラレート（3）・信仰（4） */
+const SPECIAL_KINDS: Record<number, "crystallize" | "accelerate" | "faith"> = { 2: "crystallize", 3: "accelerate", 4: "faith" };
+const specialOf = new Map<string, NonNullable<Card["special"]>>();
 for (const [id, s] of sources) {
   if (!pool.has(id)) continue;
   for (const ref of (s.api?.specificEffects ?? []).map(String)) {
@@ -248,8 +253,15 @@ for (const [id, s] of sources) {
     }
     if (e.type !== SPECIFIC_EFFECT_CREST) {
       // ローテーションのカードのクレスト以外の特殊効果（信仰値など）は、能力を実装するときに扱う
-      if (isStarterCard(id)) problems.add(`${id} ${s.fields.name}: 未対応の特殊効果の種類です: ${e.type}`);
-      else unsupportedEffects.add(`${id} ${s.fields.name}（種類 ${e.type}）`);
+      const kind = SPECIAL_KINDS[e.type];
+      if (isStarterCard(id) || !kind) {
+        problems.add(`${id} ${s.fields.name}: 未対応の特殊効果の種類です: ${e.type}`);
+        continue;
+      }
+      const text = cleanText(e.text, `${ref} ${s.fields.name}`);
+      const m = /【カウントダウン_(\d+)】/.exec(text);
+      specialOf.set(id, { kind, cost: specificCosts.get(ref) ?? 0, text, ...(m?.[1] ? { countdown: Number(m[1]) } : {}) });
+      unsupportedEffects.add(`${id} ${s.fields.name}（${kind}）`);
       continue;
     }
     const name = `クレスト：${s.fields.name}`;
@@ -310,6 +322,7 @@ for (const id of pool) {
     ...(crestOf.has(id) ? { crest: crestOf.get(id) as string } : {}),
     ...(s.api?.changed || o ? { starterAbilityChanged: true as const } : {}),
     ...(s.api?.rotation ? { rotation: true as const } : {}),
+    ...(specialOf.has(id) ? { special: specialOf.get(id) as NonNullable<Card["special"]> } : {}),
   };
 
   if (type === "follower") {
@@ -351,7 +364,7 @@ console.log(`${files.length} ファイルから ${cards.length} 枚を ${OUT_FIL
 console.log(`今のローテーションで使えるカード: ${count((c) => c.rotation === true)} 枚`);
 console.log(`クレスト ${crests.length} 件を ${CRESTS_FILE} に書き出しました`);
 if (unsupportedEffects.size > 0) {
-  console.log(`クレスト以外の特殊効果を持つローテーションのカード（未対応）: ${[...unsupportedEffects].join("、")}`);
+  console.log(`結晶・アクセラレート・信仰を持つカード: ${[...unsupportedEffects].join("、")}`);
 }
 const changed = cards.filter((c) => c.starterAbilityChanged).map((c) => c.name);
 console.log(`当時の能力に差し替えたカード: ${changed.length > 0 ? changed.join("、") : "なし"}`);

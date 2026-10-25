@@ -47,7 +47,9 @@ fn walk_effects(list: &'static [Effect], v: Option<&'static Json>, ix: &mut DslI
         ix.effect_json.insert(addr(e), ev);
         ix.effect_by_key.entry(ev.canonical()).or_insert(e);
         match e {
-            Effect::Mode { options } => {
+            Effect::Mode { options, .. }
+            | Effect::RandomEffects { options, .. }
+            | Effect::CycleEffects { options } => {
                 let Some(Json::Arr(ovs)) = ev.get("options") else {
                     panic!("mode の options がありません")
                 };
@@ -55,6 +57,10 @@ fn walk_effects(list: &'static [Effect], v: Option<&'static Json>, ix: &mut DslI
                     walk_effects(o, Some(ov), ix);
                 }
             }
+            Effect::PayPp { then, .. } | Effect::SpendFaith { then, .. } => {
+                walk_effects(then, ev.get("then"), ix)
+            }
+            Effect::GrantFaith { abilities } => walk_abilities(abilities, ev.get("abilities"), ix),
             Effect::Grant {
                 abilities: Some(abs),
                 ..
@@ -92,7 +98,28 @@ fn dsl_index() -> &'static DslIndex {
         if let Some(Json::Obj(items)) = raw.get("cardAbilities") {
             for (id, v) in items {
                 let c = d.card_idx(id) as usize;
-                walk_abilities(&d.abilities[c].abilities, v.get("abilities"), &mut ix);
+                let a = &d.abilities[c];
+                walk_abilities(&a.abilities, v.get("abilities"), &mut ix);
+                // アクセラレート・結晶・信仰の能力（docs/rules.md 12章）
+                for (alt, key) in [
+                    (&a.accelerate, "accelerate"),
+                    (&a.crystallize, "crystallize"),
+                ] {
+                    if let Some(alt) = alt {
+                        walk_abilities(
+                            &alt.abilities,
+                            v.get(key).and_then(|x| x.get("abilities")),
+                            &mut ix,
+                        );
+                    }
+                }
+                if let Some(f) = &a.faith {
+                    walk_abilities(
+                        &f.abilities,
+                        v.get("faith").and_then(|x| x.get("abilities")),
+                        &mut ix,
+                    );
+                }
             }
         }
         if let Some(Json::Obj(items)) = raw.get("crestAbilities") {
@@ -218,6 +245,25 @@ fn hint_json(h: &DrawHint) -> Json {
 }
 
 fn hand_json(h: &HandCard) -> Json {
+    let mut v = hand_json_base(h);
+    if !h.ext.is_default() {
+        if let Json::Obj(items) = &mut v {
+            let e = &h.ext;
+            items.push((
+                "ext".into(),
+                obj(vec![
+                    ("gaugeEvolves", num(e.gauge_evolves)),
+                    ("costSet", opt_num(e.cost_set)),
+                    ("tempCostMod", num(e.temp_cost_mod)),
+                    ("tempCostSet", opt_num(e.temp_cost_set)),
+                ]),
+            ));
+        }
+    }
+    v
+}
+
+fn hand_json_base(h: &HandCard) -> Json {
     obj(vec![
         ("iid", num(h.iid)),
         ("cardId", card_id(h.card)),
@@ -280,7 +326,60 @@ fn board_json(c: &OnBoard) -> Json {
             ("actedThisTurn", Json::Bool(c.acted_this_turn)),
         ]);
     }
+    if !c.ext.is_default() {
+        let e = &c.ext;
+        o.push((
+            "ext",
+            obj(vec![
+                ("silenced", Json::Bool(e.silenced)),
+                ("noAttack", Json::Bool(e.no_attack)),
+                ("tempNoAttack", Json::Bool(e.temp_no_attack)),
+                ("timedKeywords", keywords(e.timed_keywords)),
+                ("timedUntil", num(e.timed_until)),
+                ("tempMaxAttacks", num(e.temp_max_attacks)),
+                ("lostLastWords", Json::Bool(e.lost_last_words)),
+                ("crystal", Json::Bool(e.crystal)),
+                ("cycle", num(e.cycle as i32)),
+                ("usedOptions", num(e.used_options as i32)),
+                ("fused", Json::Bool(e.fused)),
+            ]),
+        ));
+    }
     obj(o)
+}
+
+fn player_ext_json(e: &PlayerExt) -> Json {
+    obj(vec![
+        ("rotation", Json::Bool(e.rotation)),
+        ("entered", cards(&e.entered)),
+        ("evolvedCount", num(e.evolved_count)),
+        ("playedCosts", Json::Num(e.played_costs as f64)),
+        ("attackedLeaderTurn", num(e.attacked_leader_turn)),
+        (
+            "faith",
+            e.faith
+                .as_ref()
+                .map(|f| {
+                    obj(vec![
+                        ("iid", num(f.iid)),
+                        ("cardId", card_id(f.card)),
+                        ("value", num(f.value)),
+                        (
+                            "granted",
+                            Json::Arr(f.granted.iter().map(|a| ability_json(a)).collect()),
+                        ),
+                    ])
+                })
+                .unwrap_or(Json::Null),
+        ),
+        (
+            "leaderCap",
+            e.leader_cap
+                .map(|(a, b, c)| Json::Arr(vec![num(a), num(b), num(c)]))
+                .unwrap_or(Json::Null),
+        ),
+        ("leaderPlus", num(e.leader_plus)),
+    ])
 }
 
 fn player_json(p: &PlayerState) -> Json {
@@ -316,13 +415,18 @@ fn player_json(p: &PlayerState) -> Json {
                 p.crests
                     .iter()
                     .map(|c| {
-                        obj(vec![
+                        let mut o = vec![
                             ("iid", num(c.iid)),
                             ("crestId", s(&data().crests[c.crest as usize].id)),
                             ("countdown", opt_num(c.countdown)),
                             ("order", num(c.order)),
                             ("usedOncePerTurn", once(&c.used_once)),
-                        ])
+                        ];
+                        if c.cycle != 0 || c.used_options != 0 {
+                            o.push(("cycle", num(c.cycle as i32)));
+                            o.push(("usedOptions", num(c.used_options as i32)));
+                        }
+                        obj(o)
                     })
                     .collect(),
             ),
@@ -364,12 +468,15 @@ fn player_json(p: &PlayerState) -> Json {
         ("leaderOncePerTurn", Json::Obj(Vec::new())),
         ("mulliganDone", Json::Bool(p.mulligan_done)),
     ]);
+    if !p.ext.is_default() {
+        o.push(("ext", player_ext_json(&p.ext)));
+    }
     obj(o)
 }
 
 fn ctx_json(c: &Ctx) -> Json {
     let d = data();
-    obj(vec![
+    let mut v = obj(vec![
         ("controller", num(c.controller as i32)),
         ("source", num(c.source)),
         ("event", opt_num(c.event)),
@@ -394,7 +501,38 @@ fn ctx_json(c: &Ctx) -> Json {
         ("enhanced", Json::Bool(c.enhanced)),
         ("sourceX", opt_num(c.source_x)),
         ("sourceAttack", num(c.source_attack)),
-    ])
+    ]);
+    if c.ext != CtxExt::default() {
+        if let Json::Obj(items) = &mut v {
+            let e = &c.ext;
+            items.push((
+                "ext".into(),
+                obj(vec![
+                    ("paidCost", num(e.paid_cost)),
+                    ("gauge", opt_num(e.gauge)),
+                    (
+                        "sourceCard",
+                        e.source_card.map(card_id).unwrap_or(Json::Null),
+                    ),
+                    ("sourceCost", opt_num(e.source_cost)),
+                    ("fused", Json::Bool(e.fused)),
+                    ("eventCard", e.event_card.map(card_id).unwrap_or(Json::Null)),
+                    (
+                        "slotCards",
+                        Json::Arr(
+                            e.slot_cards
+                                .iter()
+                                .map(|(i, c, o)| {
+                                    Json::Arr(vec![num(*i), card_id(*c), num(*o as i32)])
+                                })
+                                .collect(),
+                        ),
+                    ),
+                ]),
+            ));
+        }
+    }
+    v
 }
 
 fn feff_json(e: &FEff) -> Json {
@@ -752,6 +890,53 @@ fn hand_of(v: &Json) -> R<HandCard> {
         fused_this_turn: boolean(v, "fusedThisTurn")?,
         revealed: boolean(v, "revealed")?,
         drawn_by: hint_of(field(v, "drawnBy")?)?,
+        ext: match v.get("ext") {
+            None | Some(Json::Null) => HandExt::default(),
+            Some(e) => HandExt {
+                gauge_evolves: int(e, "gaugeEvolves")?,
+                cost_set: opt_int(e, "costSet")?,
+                temp_cost_mod: int(e, "tempCostMod")?,
+                temp_cost_set: opt_int(e, "tempCostSet")?,
+            },
+        },
+    })
+}
+
+fn player_ext_of(e: &Json) -> R<PlayerExt> {
+    let faith = match field(e, "faith")? {
+        Json::Null => None,
+        f => Some(FaithState {
+            iid: int(f, "iid")?,
+            card: card_field(f, "cardId")?,
+            value: int(f, "value")?,
+            granted: array(f, "granted")?
+                .iter()
+                .map(ability_from)
+                .collect::<R<Vec<_>>>()?,
+        }),
+    };
+    let leader_cap = match field(e, "leaderCap")? {
+        Json::Null => None,
+        Json::Arr(xs) if xs.len() == 3 => Some((
+            int_of("leaderCap", &xs[0])? as i32,
+            int_of("leaderCap", &xs[1])? as i32,
+            int_of("leaderCap", &xs[2])? as i32,
+        )),
+        _ => return Err("\"leaderCap\" は3つの数の配列".into()),
+    };
+    Ok(PlayerExt {
+        rotation: boolean(e, "rotation")?,
+        entered: {
+            let mut v = card_list(e, "entered")?;
+            v.sort_unstable();
+            v.into()
+        },
+        evolved_count: int(e, "evolvedCount")?,
+        played_costs: int_of("playedCosts", field(e, "playedCosts")?)? as u32,
+        attacked_leader_turn: int(e, "attackedLeaderTurn")?,
+        faith,
+        leader_cap,
+        leader_plus: int(e, "leaderPlus")?,
     })
 }
 
@@ -782,7 +967,23 @@ fn board_of(v: &Json) -> R<OnBoard> {
         countdown: None,
         sigils: None,
         acted_this_turn: false,
+        ext: BoardExt::default(),
     };
+    if let Some(e) = v.get("ext").filter(|e| !matches!(e, Json::Null)) {
+        b.ext = BoardExt {
+            silenced: boolean(e, "silenced")?,
+            no_attack: boolean(e, "noAttack")?,
+            temp_no_attack: boolean(e, "tempNoAttack")?,
+            timed_keywords: keywords_of(e, "timedKeywords")?,
+            timed_until: int(e, "timedUntil")?,
+            temp_max_attacks: int(e, "tempMaxAttacks")?,
+            lost_last_words: boolean(e, "lostLastWords")?,
+            crystal: boolean(e, "crystal")?,
+            cycle: int(e, "cycle")? as u8,
+            used_options: int(e, "usedOptions")? as u16,
+            fused: boolean(e, "fused")?,
+        };
+    }
     match string(v, "kind")? {
         "follower" => {
             b.is_follower = true;
@@ -860,6 +1061,16 @@ fn player_of(v: &Json) -> R<PlayerState> {
                     countdown: opt_int(c, "countdown")?,
                     order: int(c, "order")?,
                     used_once: once_of(c, "usedOncePerTurn")?,
+                    cycle: if c.get("cycle").is_some() {
+                        int(c, "cycle")? as u8
+                    } else {
+                        0
+                    },
+                    used_options: if c.get("usedOptions").is_some() {
+                        int(c, "usedOptions")? as u16
+                    } else {
+                        0
+                    },
                 })
             })
             .collect::<R<_>>()?,
@@ -885,6 +1096,10 @@ fn player_of(v: &Json) -> R<PlayerState> {
         ep_evolved_this_turn: opt_card(v, "epEvolvedThisTurn")?,
         sep_evolved_this_turn: opt_card(v, "sepEvolvedThisTurn")?,
         mulligan_done: boolean(v, "mulliganDone")?,
+        ext: match v.get("ext") {
+            None | Some(Json::Null) => PlayerExt::default(),
+            Some(e) => player_ext_of(e)?,
+        },
     })
 }
 
@@ -936,6 +1151,31 @@ fn ctx_of(v: &Json) -> R<Ctx> {
         enhanced: boolean(v, "enhanced")?,
         source_x: opt_int(v, "sourceX")?,
         source_attack: int(v, "sourceAttack")?,
+        ext: match v.get("ext") {
+            None | Some(Json::Null) => CtxExt::default(),
+            Some(e) => CtxExt {
+                paid_cost: int(e, "paidCost")?,
+                gauge: opt_int(e, "gauge")?,
+                source_card: opt_card(e, "sourceCard")?,
+                source_cost: opt_int(e, "sourceCost")?,
+                fused: boolean(e, "fused")?,
+                event_card: opt_card(e, "eventCard")?,
+                slot_cards: array(e, "slotCards")?
+                    .iter()
+                    .map(|x| match x {
+                        Json::Arr(xs) if xs.len() == 3 => match &xs[1] {
+                            Json::Str(id) => Ok((
+                                int_of("slotCards", &xs[0])? as Iid,
+                                card_of(id)?,
+                                int_of("slotCards", &xs[2])? as PlayerIndex,
+                            )),
+                            _ => Err("\"slotCards\" は [iid, カードID, 持ち主] の配列".to_string()),
+                        },
+                        _ => Err("\"slotCards\" は [iid, カードID, 持ち主] の配列".to_string()),
+                    })
+                    .collect::<R<Vec<_>>>()?,
+            },
+        },
     })
 }
 

@@ -5553,6 +5553,11 @@
       "90014330"
     ],
     "rotation": true,
+    "special": {
+      "kind": "faith",
+      "cost": 0,
+      "text": "信仰値は0から始まる。\n自分のフォロワーが進化したとき、信仰値を+1する。"
+    },
     "type": "follower",
     "attack": 1,
     "defense": 1
@@ -5714,6 +5719,11 @@
       "90024320"
     ],
     "rotation": true,
+    "special": {
+      "kind": "faith",
+      "cost": 0,
+      "text": "信仰値は0から始まる。\n自分がカードを【エンハンス】でプレイしたとき、信仰値を+1する。"
+    },
     "type": "follower",
     "attack": 1,
     "defense": 2
@@ -5884,6 +5894,11 @@
       "90034330"
     ],
     "rotation": true,
+    "special": {
+      "kind": "faith",
+      "cost": 0,
+      "text": "信仰値は0から始まる。\n自分の『天晶の魔手』が場に出たとき、信仰値を+1する。"
+    },
     "type": "follower",
     "attack": 5,
     "defense": 5
@@ -6209,6 +6224,12 @@
     "text": "これが場に出たとき、自分のリーダーを2回復。\n【必殺】\n【守護】",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "crystallize",
+      "cost": 2,
+      "text": "【カウントダウン_3】\n【ラストワード】『崇奉の怯者』1枚を自分の場に出す。",
+      "countdown": 3
+    },
     "type": "follower",
     "attack": 4,
     "defense": 5
@@ -6253,6 +6274,12 @@
     "text": "【突進】\n【必殺】",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "crystallize",
+      "cost": 1,
+      "text": "【カウントダウン_3】\n【ラストワード】『崇敬の塗布者』1枚を自分の場に出す。",
+      "countdown": 3
+    },
     "type": "follower",
     "attack": 5,
     "defense": 3
@@ -6299,6 +6326,12 @@
     "text": "【ファンファーレ】『崇拝の聖騎士』1枚を自分の場に出す。\n【必殺】\n【オーラ】\n【進化時】相手の場のフォロワー1枚を選ぶ。それを破壊。",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "crystallize",
+      "cost": 1,
+      "text": "【カウントダウン_3】\n【ラストワード】『崇拝の聖騎士』1枚を自分の場に出す。",
+      "countdown": 3
+    },
     "type": "follower",
     "attack": 2,
     "defense": 4
@@ -6349,6 +6382,11 @@
       "90064320"
     ],
     "rotation": true,
+    "special": {
+      "kind": "faith",
+      "cost": 0,
+      "text": "信仰値は0から始まる。\n自分のアミュレットが破壊されたとき、信仰値を+1する。"
+    },
     "type": "follower",
     "attack": 9,
     "defense": 9
@@ -6364,6 +6402,11 @@
     "text": "【ファンファーレ】自分のデッキから3枚を引く。\n【守護】",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "accelerate",
+      "cost": 2,
+      "text": "『低劣の玩具』1枚を自分の場に出す。"
+    },
     "type": "follower",
     "attack": 1,
     "defense": 3
@@ -6414,6 +6457,11 @@
     "text": "【ファンファーレ】『拙劣の人形』1枚を自分の場に出す。それとこれは進化する。",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "accelerate",
+      "cost": 3,
+      "text": "『拙劣の人形』2枚を自分の場に出す。"
+    },
     "type": "follower",
     "attack": 2,
     "defense": 1
@@ -6461,6 +6509,11 @@
     "text": "【ファンファーレ】『愚劣の兵器』2枚を自分の場に出す。\n自分のターン終了時、相手の場のフォロワーすべてに3ダメージを割りふる。\n【進化時】相手の場のフォロワーすべてに3ダメージを割りふる。",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "accelerate",
+      "cost": 4,
+      "text": "『愚劣の兵器』1枚を自分の場に出す。"
+    },
     "type": "follower",
     "attack": 3,
     "defense": 4
@@ -8497,6 +8550,11 @@
     "text": "【ファンファーレ】自分の手札2枚を選ぶ。それを捨てる。相手の場のフォロワーすべてと相手のリーダーに4ダメージ。\n【超進化時】自分のデッキから3枚を引く。",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "accelerate",
+      "cost": 3,
+      "text": "自分のPP最大値を+1する。"
+    },
     "type": "follower",
     "attack": 6,
     "defense": 6
@@ -8969,6 +9027,11 @@
     "text": "【ファンファーレ】相手の場のフォロワー1枚を選ぶ。それに6ダメージ。相手の場の選んでいないフォロワーからランダム1枚に2ダメージ。\n【守護】",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "accelerate",
+      "cost": 1,
+      "text": "相手の場のフォロワーからランダム1枚に2ダメージ。"
+    },
     "type": "follower",
     "attack": 6,
     "defense": 6
@@ -9720,6 +9783,12 @@
     "text": "【守護】\n【ラストワード】相手の場のフォロワーからランダム1枚を破壊。自分のリーダーを2回復。",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "crystallize",
+      "cost": 2,
+      "text": "【カウントダウン_4】\n【ラストワード】『淵底の大佐』1枚を自分の場に出す。",
+      "countdown": 4
+    },
     "type": "follower",
     "attack": 4,
     "defense": 6
@@ -9883,6 +9952,12 @@
     "text": "【疾走】",
     "related": [],
     "rotation": true,
+    "special": {
+      "kind": "crystallize",
+      "cost": 1,
+      "text": "【カウントダウン_3】\n【ラストワード】『ミラクルアルミラージ』1枚を自分の場に出す。\nコスト1【アクト】これのカウントを-1する。",
+      "countdown": 3
+    },
     "type": "follower",
     "attack": 2,
     "defense": 1
@@ -10616,6 +10691,11 @@
     "related": [
       "10631110"
     ],
+    "special": {
+      "kind": "faith",
+      "cost": 0,
+      "text": "信仰値は0から始まる。\n自分の『天晶の魔手』が場に出たとき、信仰値を+1する。"
+    },
     "type": "spell"
   },
   {

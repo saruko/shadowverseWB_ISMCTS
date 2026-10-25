@@ -49,6 +49,7 @@ pub fn hand_eq_noid(a: &HandCard, b: &HandCard) -> bool {
         && a.keywords == b.keywords
         && a.fused_kinds == b.fused_kinds
         && a.fused_this_turn == b.fused_this_turn
+        && a.ext == b.ext
 }
 
 pub fn hand_eq(a: &HandCard, b: &HandCard) -> bool {
@@ -67,6 +68,7 @@ pub fn board_eq_noid(a: &OnBoard, b: &OnBoard) -> bool {
         || a.temp_keywords != b.temp_keywords
         || !abilities_eq(&a.granted, &b.granted)
         || !map_eq(&a.used_once, &b.used_once)
+        || a.ext != b.ext
     {
         return false;
     }
@@ -91,7 +93,11 @@ pub fn board_eq(a: &OnBoard, b: &OnBoard) -> bool {
 }
 
 pub fn crest_eq_noid(a: &CrestInstance, b: &CrestInstance) -> bool {
-    a.crest == b.crest && a.countdown == b.countdown && map_eq(&a.used_once, &b.used_once)
+    a.crest == b.crest
+        && a.countdown == b.countdown
+        && map_eq(&a.used_once, &b.used_once)
+        && a.cycle == b.cycle
+        && a.used_options == b.used_options
 }
 
 pub fn crest_eq(a: &CrestInstance, b: &CrestInstance) -> bool {
@@ -148,6 +154,7 @@ fn ctx_eq(a: &Ctx, b: &Ctx) -> bool {
         && a.enhanced == b.enhanced
         && a.source_x == b.source_x
         && a.source_attack == b.source_attack
+        && a.ext == b.ext
 }
 
 fn feff_eq(a: &FEff, b: &FEff) -> bool {
@@ -213,6 +220,7 @@ fn player_rest_eq(a: &PlayerState, b: &PlayerState) -> bool {
         && a.ep_evolved_this_turn == b.ep_evolved_this_turn
         && a.sep_evolved_this_turn == b.sep_evolved_this_turn
         && a.mulligan_done == b.mulligan_done
+        && a.ext == b.ext
 }
 
 fn player_eq(a: &PlayerState, b: &PlayerState) -> bool {

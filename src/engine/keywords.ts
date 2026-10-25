@@ -39,3 +39,9 @@ export function enhanceCost(text: string): number | null {
   const m = /【エンハンス_(\d+)】/.exec(text);
   return m?.[1] !== undefined ? Number(m[1]) : null;
 }
+
+/** 【エンハンス_N】の N すべて（小さい順、重複なし）。複数あるカードは払える最も大きいもので払う（docs/rules.md 12章） */
+export function enhanceLevels(text: string): number[] {
+  const levels = [...text.matchAll(/【エンハンス_(\d+)】/g)].map((m) => Number(m[1]));
+  return [...new Set(levels)].sort((a, b) => a - b);
+}

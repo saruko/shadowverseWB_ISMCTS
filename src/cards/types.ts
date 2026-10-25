@@ -89,6 +89,11 @@ interface CardBase {
   starterAbilityChanged?: true;
   /** 今のローテーションで使える（公式データの is_include_rotation。新弾のたびに変わる） */
   rotation?: true;
+  /**
+   * クレスト以外の特殊効果（公式データの specific_effect_card_info。docs/rules.md 12章）:
+   * 結晶（種類2）・アクセラレート（種類3）・信仰（種類4）。能力の定義は abilities の crystallize・accelerate・faith
+   */
+  special?: { kind: "crystallize" | "accelerate" | "faith"; cost: number; text: string; countdown?: number };
 }
 
 export interface FollowerCard extends CardBase {

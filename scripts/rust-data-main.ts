@@ -12,7 +12,7 @@ import { ALL_CARDS, ALL_CRESTS, STARTER, inFormat } from "../src/cards";
 import { CARD_ABILITIES, CREST_ABILITIES } from "../src/cards/abilities";
 import { APOCALYPSE_DECK } from "../src/cards/abilities/special";
 import { DEFAULT_DECKS } from "../src/cards/defaultDecks";
-import { enhanceCost, staticOf } from "../src/engine";
+import { enhanceCost, enhanceLevels, staticOf } from "../src/engine";
 import { id } from "../src/cards/abilities/helpers";
 import { CLASS_WEIGHTS, DEFAULT_WEIGHTS, MODEL_FEATURES, MULLIGAN_MODEL, MULLIGAN_ROLES, MULLIGAN_WEIGHTS, ROLES, SEARCH_WEIGHTS } from "../src/ai/data";
 import valueNet from "../data/value-net.json";
@@ -68,6 +68,7 @@ export function engineData() {
         maxAttacks: st.maxAttacks,
         earthSigil: st.earthSigil,
         enhance: enhanceCost(c.text),
+        enhanceLevels: enhanceLevels(c.text),
         token: c.set === "token",
         starter: inFormat(STARTER, c),
       };

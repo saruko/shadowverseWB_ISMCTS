@@ -296,8 +296,9 @@ fn self_reduction(c: CardIdx, sb: i32, leaves: i32) -> i32 {
                 Effect::CostChange {
                     target: Target::This,
                     amount,
+                    ..
                 } => (-*amount).max(0),
-                Effect::Mode { options } => options.iter().map(|o| walk(o)).sum(),
+                Effect::Mode { options, .. } => options.iter().map(|o| walk(o)).sum(),
                 Effect::If {
                     then, otherwise, ..
                 } => walk(then) + otherwise.as_ref().map_or(0, |o| walk(o)),
@@ -561,7 +562,8 @@ impl<'a> World<'a> {
             if b.is_follower {
                 let blocked = b.cannot_attack_until.is_some_and(|u| u >= s.turn);
                 if !blocked {
-                    attacks = (b.max_attacks - b.attacks_this_turn).max(0);
+                    attacks =
+                        (b.max_attacks.max(b.ext.temp_max_attacks) - b.attacks_this_turn).max(0);
                     fols.push(Fol {
                         atk: b.attack_value(),
                         attacks,
@@ -742,6 +744,22 @@ impl<'a> World<'a> {
             (false, _, On::AllyDestroyed) => c.opp_fols,
             // 回数を見積もれないので、何かを数える能力なら見積もらない（呼び出し側で扱う）
             (_, _, On::LeaderHealed) => -1,
+            // ローテーションで足した誘発も回数を見積もらない（docs/rules.md 12章）
+            (
+                _,
+                _,
+                On::AllyPlay
+                | On::AllyEvolve
+                | On::EnemyEnter
+                | On::Buffed
+                | On::Drawn
+                | On::AllyDraw
+                | On::AllyAttack
+                | On::EnemyAttack
+                | On::SuperEvolved
+                | On::DirectSummoned
+                | On::EarthRite,
+            ) => -1,
         }
     }
 
@@ -851,6 +869,16 @@ impl<'a> World<'a> {
                 .iter()
                 .fold(Ti::default(), |a, x| a.union(self.ti(x, fr))),
             Target::MaxAttack { of } => self.ti(of, fr).single(1),
+            // 山札のカードの強化・クレストの破壊（ラストワード）は見積もらない
+            Target::Deck { .. } | Target::Crests { .. } => Ti {
+                unknown: true,
+                ..Ti::default()
+            },
+            Target::Leftmost { of, count } => self.ti(of, fr).single(*count),
+            Target::MinHpLeaders => Ti {
+                enemy_leader: true,
+                ..Ti::default()
+            },
         }
     }
 
@@ -860,6 +888,10 @@ impl<'a> World<'a> {
             Target::Leader { .. } => 2,
             Target::Board { .. } => 2 * BOARD_LIMIT as i32,
             Target::Hand { .. } => self.c.hand_units,
+            Target::Deck { .. } => 40,
+            Target::Crests { .. } => 10,
+            Target::Leftmost { count, .. } => (*count).max(0),
+            Target::MinHpLeaders => 2,
             Target::Slot { slot } => match fr.slots.iter().rev().find(|e| e.0 == *slot) {
                 Some((_, SlotInfo::From(_, n))) | Some((_, SlotInfo::Summoned(_, n))) => *n,
                 None => 2 * BOARD_LIMIT as i32,
@@ -925,14 +957,39 @@ impl<'a> World<'a> {
                 return;
             }
             match e {
-                Effect::Choose { slot, from, count } | Effect::Random { slot, from, count } => {
+                Effect::Choose { slot, from, count } => {
                     fr.slots.push((*slot, SlotInfo::From(from, *count)));
                 }
-                Effect::Mode { options } => {
+                Effect::Random { slot, from, count } => match self.vb(s, p, count, fr) {
+                    Some(n) => fr.slots.push((*slot, SlotInfo::From(from, n))),
+                    None => acc.unk("Random"),
+                },
+                Effect::Mode { options, .. }
+                | Effect::RandomEffects { options, .. }
+                | Effect::CycleEffects { options } => {
                     for o in options {
                         self.walk(s, p, o, m, fr, acc);
                     }
                 }
+                Effect::PayPp { then, .. } | Effect::SpendFaith { then, .. } => {
+                    self.walk(s, p, then, m, fr, acc);
+                }
+                // 顔へのダメージ・攻撃回数・出せるカードを増やしうるもの（見積もらない）
+                Effect::Copy { .. } => acc.unk("Copy"),
+                Effect::TriggerOwn { .. } => acc.unk("TriggerOwn"),
+                Effect::SetCost { .. } => acc.unk("SetCost"),
+                Effect::MoveToBoard { .. } => acc.unk("MoveToBoard"),
+                Effect::DirectSummon => acc.unk("DirectSummon"),
+                Effect::GainEp { .. } | Effect::GainSep { .. } => acc.unk("GainEp"),
+                Effect::RandomKeywords { .. } => acc.unk("RandomKeywords"),
+                Effect::LeaderStatus { .. } => acc.unk("LeaderStatus"),
+                Effect::GrantFaith { .. } => acc.unk("GrantFaith"),
+                Effect::Silence { .. }
+                | Effect::LoseLastWords { .. }
+                | Effect::AddFaith { .. }
+                | Effect::SplitRandom { .. }
+                | Effect::AddLeaderMaxHp { .. }
+                | Effect::AddGauge { .. } => {}
                 Effect::Damage { target, amount } | Effect::Distribute { target, amount } => {
                     let t = self.ti(target, fr);
                     if t.unknown {
@@ -973,7 +1030,7 @@ impl<'a> World<'a> {
                         acc.unk("Bounce");
                     }
                 }
-                Effect::ReturnToDeck { target } => {
+                Effect::ReturnToDeck { target, .. } => {
                     let t = self.ti(target, fr);
                     if t.unknown {
                         acc.unk("ReturnToDeck");
@@ -981,7 +1038,15 @@ impl<'a> World<'a> {
                         acc.reshuffle = true;
                     }
                 }
-                Effect::Draw { count, filter } => {
+                Effect::Draw {
+                    count,
+                    filter,
+                    side,
+                    ..
+                } => {
+                    if *side == Some(Side::Opponent) {
+                        continue;
+                    }
                     if fr.mine {
                         match self.vb(s, p, count, fr) {
                             Some(n) => acc.draws = add(acc.draws, mul(m, n.max(0))),
@@ -1000,7 +1065,7 @@ impl<'a> World<'a> {
                         fr.slots.push((*sl, SlotInfo::Summoned(false, 0)));
                     }
                 }
-                Effect::AddToHand { card_id, count } => {
+                Effect::AddToHand { card_id, count, .. } => {
                     if fr.mine {
                         match self.vb(s, p, count, fr) {
                             Some(n) => push(&mut acc.adds, *card_id, mul(m, n.max(0))),
@@ -1012,7 +1077,12 @@ impl<'a> World<'a> {
                     card_id,
                     count,
                     slot,
+                    side,
                 } => {
+                    // 相手の場に出すカードは、こちらの顔へのダメージを増やさない（守護は無視している）
+                    if *side == Some(Side::Opponent) {
+                        continue;
+                    }
                     let n = match self.vb(s, p, count, fr) {
                         Some(n) => n.max(0),
                         None => {
@@ -1029,7 +1099,7 @@ impl<'a> World<'a> {
                         fr.slots.push((*sl, SlotInfo::Summoned(fr.mine, n)));
                     }
                 }
-                Effect::Reanimate { cost } => {
+                Effect::Reanimate { cost, .. } => {
                     if fr.mine {
                         // 墓地のフォロワーと、このターンに破壊されて墓地に行きうるフォロワー
                         let mut seen: Vec<CardIdx> = Vec::new();
@@ -1107,8 +1177,14 @@ impl<'a> World<'a> {
                         acc.apocalypse = true;
                     }
                 }
-                Effect::Transform { target, card_id } => {
+                Effect::Transform {
+                    target, card_id, ..
+                } => {
                     let t = self.ti(target, fr);
+                    let Some(card_id) = card_id else {
+                        acc.unk("Transform");
+                        continue;
+                    };
                     if t.unknown {
                         acc.unk("Transform");
                     } else if matches!(target, Target::This) {
@@ -1221,7 +1297,7 @@ impl<'a> World<'a> {
                         acc.sb_events = add(acc.sb_events, mul(m, (*times).max(0)));
                     }
                 }
-                Effect::CostChange { target, amount } => {
+                Effect::CostChange { target, amount, .. } => {
                     if fr.mine && *amount < 0 && !matches!(target, Target::This) {
                         acc.cost_down = true;
                     }
@@ -1350,6 +1426,16 @@ pub fn damage_bound(s: &GameState, p: PlayerIndex, draws: bool) -> Option<i32> {
 pub fn damage_bound_or_reason(s: &GameState, p: PlayerIndex, draws: bool) -> Result<i32, Why> {
     if s.phase != Phase::Main || s.active != p {
         return Err(("not main", None));
+    }
+    // ローテーションで足した、ここで数えない仕組み（docs/rules.md 12章）があれば見積もらない
+    let me = &s.players[p];
+    let opp = &s.players[opponent(p)];
+    if opp.ext.leader_plus > 0 || me.ext.faith.is_some() {
+        return Err(("rotation", None));
+    }
+    let d = data();
+    if me.hand.iter().any(|h| d.zone_hand[h.card as usize]) {
+        return Err(("zone", None));
     }
     let mut acc = Acc::default();
     for _ in 0..MAX_ROUNDS {

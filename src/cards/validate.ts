@@ -53,6 +53,11 @@ function checkCard(raw: unknown, where: string, problems: string[]): void {
     p("starterAbilityChanged は true か省略が必要です");
   }
   if (raw.rotation !== undefined && raw.rotation !== true) p("rotation は true か省略が必要です");
+  if (raw.special !== undefined) {
+    const sp = raw.special;
+    if (!isObj(sp) || !isOneOf(["crystallize", "accelerate", "faith"] as const, sp.kind)) p("special.kind が不正です");
+    else if (!isNonNegInt(sp.cost) || typeof sp.text !== "string") p("special は cost と text が必要です");
+  }
 
   if (raw.crest !== undefined && (typeof raw.crest !== "string" || raw.crest === "")) {
     p("crest は空でない文字列か省略が必要です");

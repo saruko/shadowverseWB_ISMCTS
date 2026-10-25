@@ -77,9 +77,10 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 
 ## Git / 公開
 
-- 作業ブランチは指示されたブランチ（現在: `claude/next-steps`）。指示なく他ブランチへ push しない
-- 作業が一区切りついたら、ユーザーに求められなくても基本的に PR を作成する
-- GitHub Pages は GitHub Actions でビルド・デプロイ。Vite の `base` は `/Shadowverse-Wb-Sim/`
+- このリポジトリは wistery-k/Shadowverse-Wb-Sim を元にした改造版で、push 先は https://github.com/saruko/shadowverseWB_ISMCTS の `main`（ユーザー確認済み 2026-10-25）。作業が一区切りついたら push する
+- 元のリポジトリの作業ブランチ（`claude/next-steps`）や PR の運用はこのリポジトリでは使わない
+- GitHub Pages は GitHub Actions でビルド・デプロイ。Vite の `base` は元のリポジトリ名の `/Shadowverse-Wb-Sim/` のまま（このリポジトリで公開するなら変える）
+- ソースは Google ドライブ（ストリーミング）にあるが、`npm ci` などの大量の書き込みはドライブ上だと中身が空になるので、ビルド・テストはローカルに写したコピーで行う
 
 ## 権利・表記
 

@@ -129,6 +129,26 @@ pub struct HandCard {
     pub fused_this_turn: bool,
     pub revealed: bool,
     pub drawn_by: Option<DrawHint>,
+    /// ローテーションで足した状態（既定値なら書き出さない）
+    pub ext: HandExt,
+}
+
+/// 手札のカードの、ローテーションで足した状態
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HandExt {
+    /// 手札にある間に進化・超進化した自分のフォロワーの数（＋「奥義ゲージを+1」）
+    pub gauge_evolves: i32,
+    /// 「コストをNにする」で決めた元にするコスト
+    pub cost_set: Option<i32>,
+    /// ターン終了まで
+    pub temp_cost_mod: i32,
+    pub temp_cost_set: Option<i32>,
+}
+
+impl HandExt {
+    pub fn is_default(&self) -> bool {
+        *self == HandExt::default()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -165,23 +185,81 @@ pub struct OnBoard {
     pub countdown: Option<i32>,
     pub sigils: Option<i32>,
     pub acted_this_turn: bool,
+    /// ローテーションで足した状態（既定値なら書き出さない）
+    pub ext: BoardExt,
+}
+
+/// 場のカードの、ローテーションで足した状態
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BoardExt {
+    /// 能力すべてを失った
+    pub silenced: bool,
+    /// フォロワーやリーダーを攻撃できない（付与。ターン終了までのものは temp）
+    pub no_attack: bool,
+    pub temp_no_attack: bool,
+    /// 相手のターン終了まで持つキーワードと、その期限のターン
+    pub timed_keywords: Kw,
+    pub timed_until: i32,
+    /// ターン終了まで持つ攻撃回数
+    pub temp_max_attacks: i32,
+    pub lost_last_words: bool,
+    /// 結晶（アミュレットとして場にある）
+    pub crystal: bool,
+    /// 「順に1つ」の次の番号
+    pub cycle: u8,
+    /// 「働いていないランダム1つ」で働いた番号（ビット）
+    pub used_options: u16,
+    /// 手札で【融合】していた
+    pub fused: bool,
+}
+
+impl BoardExt {
+    pub fn is_default(&self) -> bool {
+        *self == BoardExt::default()
+    }
 }
 
 impl OnBoard {
     #[inline]
     pub fn has_keyword(&self, k: Kw) -> bool {
-        self.keywords.has(k) || self.temp_keywords.has(k)
+        self.keywords.has(k) || self.temp_keywords.has(k) || self.ext.timed_keywords.has(k)
     }
     #[inline]
     pub fn attack_value(&self) -> i32 {
         (self.attack + self.temp_attack).max(0)
     }
-    /// カード固有の能力＋付与された能力
+    /// カード固有の能力＋付与された能力（場で働くもの。能力を失っていれば付与されたものだけ。
+    /// 結晶なら結晶の能力。【ラストワード】を失っていればそれを除く）
     pub fn abilities(&self) -> impl Iterator<Item = &'static Ability> + '_ {
-        data().abilities[self.card as usize]
-            .abilities
+        self.own_abilities()
             .iter()
             .chain(self.granted.iter().copied())
+            .filter(move |a| {
+                a.zone.is_none() && !(self.ext.lost_last_words && a.trigger.on() == On::LastWords)
+            })
+    }
+    /// カード固有の能力（場の形による。能力を失っていれば空）
+    pub fn own_abilities(&self) -> &'static [Ability] {
+        if self.ext.silenced {
+            return &[];
+        }
+        let ab = &data().abilities[self.card as usize];
+        if self.ext.crystal {
+            return ab
+                .crystallize
+                .as_ref()
+                .map(|c| c.abilities.as_slice())
+                .unwrap_or(&[]);
+        }
+        &ab.abilities
+    }
+    /// 常在の能力（能力を失っていれば無い）
+    pub fn statics(&self) -> Option<&'static CardAbilities> {
+        if self.ext.silenced {
+            None
+        } else {
+            Some(&data().abilities[self.card as usize])
+        }
     }
 }
 
@@ -192,6 +270,47 @@ pub struct CrestInstance {
     pub countdown: Option<i32>,
     pub order: i32,
     pub used_once: Vec<(u8, i32)>,
+    /// 「順に1つ」の次の番号・「働いていないランダム1つ」で働いた番号（ビット）
+    pub cycle: u8,
+    pub used_options: u16,
+}
+
+/// 信仰（デッキに信仰を持つカードがあればマリガンの後に付く）
+#[derive(Clone, Debug, PartialEq)]
+pub struct FaithState {
+    pub iid: Iid,
+    /// 信仰を持つカード（能力の定義はそのカードの faith）
+    pub card: CardIdx,
+    pub value: i32,
+    /// 「自分の信仰は「…」を持つ」で得た能力
+    pub granted: Vec<&'static Ability>,
+}
+
+/// プレイヤーの、ローテーションで足した状態（既定値なら書き出さない）
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PlayerExt {
+    /// デッキにローテーションのカード（スターターのカード以外）がある。このバトル中の記録はこのときだけ取る
+    /// （スターターの対戦の局面を変えないため）
+    pub rotation: bool,
+    /// このバトル中に場に出た自分のフォロワーのカード（カードの順に並べる。出た順は問わない）。連携はこの数
+    pub entered: Shared<CardIdx>,
+    /// このバトル中に自分のフォロワーが進化した回数（効果による進化・超進化を含む）
+    pub evolved_count: i32,
+    /// このバトル中に自分がプレイしたカードの元のコスト（ビット。31以上は31）
+    pub played_costs: u32,
+    /// 自分のフォロワーがリーダーを攻撃した最後の自分のターン数（0 は無し）
+    pub attacked_leader_turn: i32,
+    pub faith: Option<FaithState>,
+    /// リーダーの受けるダメージの上限 (atLeast, to, 期限のターン。0 は無期限)
+    pub leader_cap: Option<(i32, i32, i32)>,
+    /// リーダーの受けるダメージの加算
+    pub leader_plus: i32,
+}
+
+impl PlayerExt {
+    pub fn is_default(&self) -> bool {
+        *self == PlayerExt::default()
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -230,6 +349,7 @@ pub struct PlayerState {
     pub ep_evolved_this_turn: Option<CardIdx>,
     pub sep_evolved_this_turn: Option<CardIdx>,
     pub mulligan_done: bool,
+    pub ext: PlayerExt,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -250,6 +370,27 @@ pub struct Ctx {
     pub enhanced: bool,
     pub source_x: Option<i32>,
     pub source_attack: i32,
+    /// ローテーションで足した文脈（既定値なら書き出さない）
+    pub ext: CtxExt,
+}
+
+/// 能力の解決中の文脈の、ローテーションで足したもの
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CtxExt {
+    /// プレイで払ったPP
+    pub paid_cost: i32,
+    /// プレイしたときの奥義ゲージ
+    pub gauge: Option<i32>,
+    /// これのカード（場・手札を離れていても分かるように）
+    pub source_card: Option<CardIdx>,
+    /// これのコスト（プレイ・捨てたとき）
+    pub source_cost: Option<i32>,
+    /// これに【融合】していた
+    pub fused: bool,
+    /// 能力を誘発させたカード（場・手札を離れていても分かるように）
+    pub event_card: Option<CardIdx>,
+    /// スロットに入れたカード（iid, カード, 持ち主）。場・手札を離れても選んだカードが分かるように
+    pub slot_cards: Vec<(Iid, CardIdx, PlayerIndex)>,
 }
 
 impl Ctx {
@@ -505,10 +646,14 @@ pub fn hand_state_changed(h: &HandCard) -> bool {
         || h.keywords != Kw::EMPTY
         || !h.fused_kinds.is_empty()
         || h.fused_this_turn
+        || !h.ext.is_default()
 }
 
 pub fn hand_cost(h: &HandCard) -> i32 {
-    (card(h.card).cost + h.cost_mod).max(0)
+    if let Some(v) = h.ext.temp_cost_set {
+        return v.max(0);
+    }
+    (h.ext.cost_set.unwrap_or(card(h.card).cost) + h.cost_mod + h.ext.temp_cost_mod).max(0)
 }
 
 impl GameState {
@@ -622,6 +767,7 @@ impl GameState {
             fused_this_turn: false,
             revealed: false,
             drawn_by: None,
+            ext: HandExt::default(),
         }
     }
 
@@ -687,6 +833,7 @@ impl GameState {
             countdown: None,
             sigils: None,
             acted_this_turn: false,
+            ext: BoardExt::default(),
         };
         if b.is_follower {
             let defense = (cd.defense + from.map(|h| h.defense_mod).unwrap_or(0)).max(0);

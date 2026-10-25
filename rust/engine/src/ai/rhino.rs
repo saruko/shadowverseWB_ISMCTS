@@ -574,7 +574,13 @@ fn effects_may_hit_own_leader(effs: &[crate::data::Effect], depth: u32) -> bool 
     fn hits(t: &Target, slots: &[(crate::data::SlotId, &Target)]) -> bool {
         match t {
             Target::Leader { side } => *side != Side::Opponent,
-            Target::This | Target::Board { .. } | Target::Hand { .. } => false,
+            Target::This
+            | Target::Board { .. }
+            | Target::Hand { .. }
+            | Target::Deck { .. }
+            | Target::Crests { .. } => false,
+            Target::MinHpLeaders => true,
+            Target::Leftmost { of, .. } => hits(of, slots),
             Target::Slot { slot } => slots
                 .iter()
                 .rev()
@@ -609,9 +615,11 @@ fn effects_may_hit_own_leader(effs: &[crate::data::Effect], depth: u32) -> bool 
                 Effect::SetLeaderMaxHp { side, .. } | Effect::Crest { side, .. } => {
                     *side != Side::Opponent
                 }
-                Effect::Summon { card_id, .. } | Effect::Transform { card_id, .. } => {
-                    card_risky(*card_id, depth)
-                }
+                Effect::Summon { card_id, .. } => card_risky(*card_id, depth),
+                Effect::Transform { card_id, .. } => match card_id {
+                    Some(c) => card_risky(*c, depth),
+                    None => true,
+                },
                 Effect::SummonCopy { .. }
                 | Effect::Reanimate { .. }
                 | Effect::SummonFromDeck { .. }
@@ -620,9 +628,21 @@ fn effects_may_hit_own_leader(effs: &[crate::data::Effect], depth: u32) -> bool 
                     .iter()
                     .flatten()
                     .any(|a| walk(&a.effects, &mut slots.clone(), depth)),
-                Effect::Mode { options } => {
+                Effect::Mode { options, .. }
+                | Effect::RandomEffects { options, .. }
+                | Effect::CycleEffects { options } => {
                     options.iter().any(|o| walk(o, &mut slots.clone(), depth))
                 }
+                Effect::PayPp { then, .. } | Effect::SpendFaith { then, .. } => {
+                    walk(then, &mut slots.clone(), depth)
+                }
+                Effect::Copy { .. }
+                | Effect::TriggerOwn { .. }
+                | Effect::MoveToBoard { .. }
+                | Effect::DirectSummon
+                | Effect::GrantFaith { .. }
+                | Effect::LeaderStatus { .. }
+                | Effect::AddLeaderMaxHp { .. } => true,
                 Effect::If {
                     then, otherwise, ..
                 } => {

@@ -73,6 +73,11 @@ fn hand_canon(h: &HandCard) -> String {
         drawn,
     ]
     .join(":")
+        + &if h.ext.is_default() {
+            String::new()
+        } else {
+            format!(":E{:?}", h.ext)
+        }
 }
 
 fn board_canon(c: &OnBoard) -> String {
@@ -106,6 +111,9 @@ fn board_canon(c: &OnBoard) -> String {
         ]);
     } else {
         v.extend([opt(c.countdown), opt(c.sigils), b(c.acted_this_turn).into()]);
+    }
+    if !c.ext.is_default() {
+        v.push(format!("E{:?}", c.ext));
     }
     v.join(":")
 }
@@ -152,12 +160,17 @@ fn player_canon(p: &PlayerState) -> String {
             join(
                 &p.crests,
                 |c| format!(
-                    "{}:{}:{}:{}:{}",
+                    "{}:{}:{}:{}:{}{}",
                     c.iid,
                     data().crests[c.crest as usize].id,
                     opt(c.countdown),
                     c.order,
-                    once(&c.used_once)
+                    once(&c.used_once),
+                    if c.cycle != 0 || c.used_options != 0 {
+                        format!(":{}:{}", c.cycle, c.used_options)
+                    } else {
+                        String::new()
+                    }
                 ),
                 ","
             )
@@ -180,6 +193,24 @@ fn player_canon(p: &PlayerState) -> String {
         ),
     ]
     .join(";");
+    // ローテーションで足した状態（既定値なら書かない）
+    if !p.ext.is_default() {
+        let e = &p.ext;
+        out.push_str(&format!(
+            ";R{}/{}/{}/{}/{}/{}/{:?}/{}",
+            b(e.rotation),
+            join(&e.entered, |c| cid(*c).to_string(), ","),
+            e.evolved_count,
+            e.played_costs,
+            e.attacked_leader_turn,
+            e.faith
+                .as_ref()
+                .map(|f| format!("{}:{}:{}:{}", f.iid, cid(f.card), f.value, f.granted.len()))
+                .unwrap_or_default(),
+            e.leader_cap,
+            e.leader_plus
+        ));
+    }
     // 相手に分からない捨てたカード（無ければ書かない）
     if !p.hidden_discards.is_empty() {
         out.push_str(&format!(

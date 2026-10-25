@@ -30,6 +30,7 @@ fn new_player(deck: Vec<CardRef>) -> PlayerState {
         ep_evolved_this_turn: None,
         sep_evolved_this_turn: None,
         mulligan_done: false,
+        ext: PlayerExt::default(),
     }
 }
 
@@ -64,6 +65,9 @@ pub fn create_game(decks: [&[CardIdx]; 2], seed: u32) -> GameState {
         pending: None,
         attack: None,
     };
+    for (pl, deck) in s.players.iter_mut().zip(decks) {
+        pl.ext.rotation = deck.iter().any(|&c| !card(c).starter);
+    }
     s.first = s.rng_int(2);
     s.active = s.first;
     s.players[opponent(s.first)].extra_pp_available = true;
@@ -174,11 +178,25 @@ fn clear_turn_effects(s: &mut GameState) {
     let turn = s.turn;
     for p in 0..2 {
         // 消すものが無い場は書き換えない（ほかの局面と共有したままにする）
+        // ローテーションで足したターン終了までの状態（docs/rules.md 12章）
+        let ext = &mut s.players[p].ext;
+        if matches!(ext.leader_cap, Some((_, _, u)) if u != 0 && u <= turn) {
+            ext.leader_cap = None;
+        }
+        let pl = &s.players[p];
+        let hand_temp = |h: &HandCard| h.ext.temp_cost_mod != 0 || h.ext.temp_cost_set.is_some();
+        if pl.hand.iter().any(hand_temp) {
+            for h in s.players[p].hand.make_mut().iter_mut() {
+                h.ext.temp_cost_mod = 0;
+                h.ext.temp_cost_set = None;
+            }
+        }
         let changes = |c: &OnBoard| {
             c.temp_keywords != Kw::EMPTY
                 || (c.is_follower
                     && (c.temp_attack != 0
                         || matches!(c.cannot_attack_until, Some(u) if u <= turn)))
+                || board_turn_ext(c, turn)
         };
         if !s.players[p].board.iter().any(changes) {
             continue;
@@ -191,8 +209,20 @@ fn clear_turn_effects(s: &mut GameState) {
                     c.cannot_attack_until = None;
                 }
             }
+            c.ext.temp_no_attack = false;
+            c.ext.temp_max_attacks = 0;
+            if !c.ext.timed_keywords.is_empty() && c.ext.timed_until <= turn {
+                c.ext.timed_keywords = Kw::EMPTY;
+            }
         }
     }
+}
+
+/// 場のカードにターン終了で切れるローテーションの状態があるか
+fn board_turn_ext(c: &OnBoard, turn: i32) -> bool {
+    c.ext.temp_no_attack
+        || c.ext.temp_max_attacks != 0
+        || (!c.ext.timed_keywords.is_empty() && c.ext.timed_until <= turn)
 }
 
 fn has_turn_effects(s: &GameState) -> bool {
@@ -202,7 +232,12 @@ fn has_turn_effects(s: &GameState) -> bool {
                 || (c.is_follower
                     && (c.temp_attack != 0
                         || matches!(c.cannot_attack_until, Some(u) if u <= s.turn)))
-        })
+                || board_turn_ext(c, s.turn)
+        }) || pl
+            .hand
+            .iter()
+            .any(|h| h.ext.temp_cost_mod != 0 || h.ext.temp_cost_set.is_some())
+            || matches!(pl.ext.leader_cap, Some((_, _, u)) if u != 0 && u <= s.turn)
     })
 }
 
@@ -216,10 +251,24 @@ fn has_turn_end_trigger(s: &GameState) -> bool {
         let matches =
             |a: &Ability| matches!(a.trigger, Trigger::TurnEnd { whose: w } if w == whose);
         let pl = &s.players[p];
+        let d = data();
         pl.crests
             .iter()
             .any(|c| crest_abilities_of(c.crest).iter().any(matches))
             || pl.board.iter().any(|c| c.abilities().any(matches))
+            || pl.ext.faith.as_ref().is_some_and(|f| {
+                f.granted.iter().any(|a| matches(a))
+                    || abilities_of(f.card)
+                        .faith
+                        .as_ref()
+                        .is_some_and(|fd| fd.abilities.iter().any(matches))
+            })
+            || pl.hand.iter().any(|h| {
+                d.zone_hand[h.card as usize] && abilities_of(h.card).abilities.iter().any(matches)
+            })
+            || pl.deck.iter().any(|r| {
+                d.zone_deck[r.card as usize] && abilities_of(r.card).abilities.iter().any(matches)
+            })
     })
 }
 
@@ -261,12 +310,14 @@ pub(crate) fn handle_internal(s: &mut GameState, controller: PlayerIndex, eff: F
         FEff::StartTurn => start_turn(s, controller),
         FEff::StartTurnDraw => {
             let a = s.active;
-            s.draw_cards(a, 1, None, None);
+            let drawn = s.draw_cards(a, 1, None, None);
+            after_draw(s, a, &drawn);
         }
         FEff::EndTurn => fire_turn_end(s),
         FEff::Cleanup => end_turn_cleanup(s),
         FEff::FinishMulligan => {
             s.phase = Phase::Main;
+            init_faith(s);
             let f = s.first;
             push_start_turn(s, f);
         }
@@ -278,15 +329,77 @@ pub(crate) fn handle_internal(s: &mut GameState, controller: PlayerIndex, eff: F
 
 // ---- 判定 ----
 
-/// プレイに必要なPP。エンハンスはPPが足りれば必ず適用される
+/// プレイに必要なPP。エンハンスはPPが足りれば必ず適用される（複数あれば払える最も大きいもの）
 pub fn play_cost(c: &Card, pp: i32, hand: Option<&HandCard>) -> i32 {
     let cost = match hand {
         Some(h) => hand_cost(h),
         None => c.cost,
     };
+    if c.enhance_levels.len() > 1 {
+        return c
+            .enhance_levels
+            .iter()
+            .rev()
+            .find(|&&e| pp >= e && e > cost)
+            .copied()
+            .unwrap_or(cost);
+    }
     match c.enhance {
         Some(e) if pp >= e && e > cost => e,
         _ => cost,
+    }
+}
+
+/// プレイの形（docs/rules.md 12章: アクセラレート・結晶は PP が元のコストに足りないときだけ）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PlayForm {
+    Normal,
+    Accelerate,
+    Crystallize,
+}
+
+/// PP pp で手札のカード h をプレイするときの形と払う PP
+pub fn play_form(c: &Card, cid: CardIdx, pp: i32, h: &HandCard) -> (PlayForm, i32) {
+    let normal = play_cost(c, pp, Some(h));
+    if normal <= pp {
+        return (PlayForm::Normal, normal);
+    }
+    let ab = abilities_of(cid);
+    if let Some(a) = &ab.accelerate {
+        if a.cost <= pp {
+            return (PlayForm::Accelerate, a.cost);
+        }
+    }
+    if let Some(a) = &ab.crystallize {
+        if a.cost <= pp {
+            return (PlayForm::Crystallize, a.cost);
+        }
+    }
+    (PlayForm::Normal, normal)
+}
+
+/// マリガンの後、信仰を持つカードがデッキにあれば信仰を付ける（docs/rules.md 12章）
+fn init_faith(s: &mut GameState) {
+    for p in 0..2 {
+        if s.players[p].ext.faith.is_some() {
+            continue;
+        }
+        let pl = &s.players[p];
+        let card = pl
+            .deck
+            .iter()
+            .map(|r| r.card)
+            .chain(pl.hand.iter().map(|h| h.card))
+            .find(|&c| abilities_of(c).faith.is_some());
+        if let Some(c) = card {
+            let iid = s.new_iid();
+            s.players[p].ext.faith = Some(FaithState {
+                iid,
+                card: c,
+                value: 0,
+                granted: Vec::new(),
+            });
+        }
     }
 }
 
@@ -296,12 +409,15 @@ fn spell_has_targets(
     p: PlayerIndex,
     hi: usize,
     scratch: &mut Option<GameState>,
+    form: PlayForm,
 ) -> bool {
     let cid = s.players[p].hand[hi].card;
+    let list: &'static [Ability] = match (form, &abilities_of(cid).accelerate) {
+        (PlayForm::Accelerate, Some(a)) => &a.abilities,
+        _ => &abilities_of(cid).abilities,
+    };
     let chooses = || {
-        abilities_of(cid)
-            .abilities
-            .iter()
+        list.iter()
             .filter(|a| a.trigger.on() == On::Spell)
             .flat_map(|a| a.effects.iter())
             .filter_map(|e| {
@@ -331,20 +447,25 @@ fn can_play(s: &GameState, p: PlayerIndex, hi: usize, scratch: &mut Option<GameS
     if abilities_of(h.card).unplayable {
         return false;
     }
-    if play_cost(c, pl.pp, Some(h)) > pl.pp {
+    let (form, cost) = play_form(c, h.card, pl.pp, h);
+    if cost > pl.pp {
         return false;
     }
-    if c.ctype != CardType::Spell && !s.can_add_to_board(p) {
+    let as_spell = c.ctype == CardType::Spell || form == PlayForm::Accelerate;
+    if !as_spell && !s.can_add_to_board(p) {
         return false;
     }
-    if c.ctype == CardType::Spell && !spell_has_targets(s, p, hi, scratch) {
+    if as_spell && !spell_has_targets(s, p, hi, scratch, form) {
         return false;
     }
     true
 }
 
 fn can_attack_at_all(s: &GameState, f: &OnBoard) -> bool {
-    if f.attacks_this_turn >= f.max_attacks {
+    if f.attacks_this_turn >= f.max_attacks.max(f.ext.temp_max_attacks) {
+        return false;
+    }
+    if f.ext.no_attack || f.ext.temp_no_attack || f.statics().is_some_and(|a| a.cannot_attack) {
         return false;
     }
     match f.cannot_attack_until {
@@ -383,7 +504,8 @@ fn for_each_attack_target(s: &GameState, attacker: &OnBoard, mut f: impl FnMut(A
             .iter()
             .filter(|c| c.is_follower && !c.has_keyword(AMBUSH) && !c.has_keyword(INTIMIDATE))
     };
-    let has_ward = attackable().any(|c| c.has_keyword(WARD));
+    let ignore_ward = attacker.statics().is_some_and(|a| a.ignore_ward);
+    let has_ward = !ignore_ward && attackable().any(|c| c.has_keyword(WARD));
     if can_attack_followers(s, attacker) {
         for c in attackable() {
             if !has_ward || c.has_keyword(WARD) {
@@ -862,10 +984,24 @@ fn apply_play(s: &mut GameState, iid: Iid) {
     let h = s.players[p].hand.make_mut().remove(hi);
     let cd = card(h.card);
     let pl = &mut s.players[p];
-    let cost = play_cost(cd, pl.pp, Some(&h));
-    let enhanced = cd.enhance == Some(cost) && cost > hand_cost(&h);
+    let (form, cost) = play_form(cd, h.card, pl.pp, &h);
+    // 自分のフォロワーの【ファンファーレ】や【エンハンス】は働かない（クレスト。docs/rules.md 12章）
+    let suppressed = cd.ctype == CardType::Follower
+        && form == PlayForm::Normal
+        && pl.crests.iter().any(|c| {
+            data().crest_abilities[c.crest as usize]
+                .as_ref()
+                .is_some_and(|a| a.suppress_fanfare)
+        });
+    let enhanced = form == PlayForm::Normal
+        && cd.enhance_levels.contains(&cost)
+        && cost > hand_cost(&h)
+        && !suppressed;
     pl.pp -= cost;
     pl.combo += 1;
+    if pl.ext.rotation {
+        pl.ext.played_costs |= 1u32 << cd.cost.clamp(0, 31);
+    }
 
     let mut ctx = Ctx::new(p, iid);
     ctx.enhanced = enhanced;
@@ -875,21 +1011,68 @@ fn apply_play(s: &mut GameState, iid: Iid) {
     } else {
         0
     };
+    // ローテーションのカードの能力だけが使う文脈（スターターの対戦では持たない。局面を変えないため）
+    if pl.ext.rotation {
+        ctx.ext.paid_cost = cost;
+        ctx.ext.gauge = Some(pl.turn_count + h.ext.gauge_evolves);
+        ctx.ext.source_card = Some(h.card);
+        ctx.ext.source_cost = Some(hand_cost(&h));
+        ctx.ext.fused = !h.fused_kinds.is_empty();
+    }
+    let cid = h.card;
 
-    if cd.ctype == CardType::Spell {
+    if cd.ctype == CardType::Spell || form == PlayForm::Accelerate {
         s.players[p].graveyard += 1;
         // 手札の他のカードはスペルブーストされる
         let others: Vec<Iid> = s.players[p].hand.iter().map(|c| c.iid).collect();
         for o in others {
             fire_spellboost(s, p, o, 1);
         }
-        push_own_abilities(s, h.card, On::Spell, &ctx);
+        if form == PlayForm::Accelerate {
+            let list: Vec<&'static Ability> = abilities_of(cid)
+                .accelerate
+                .as_ref()
+                .map(|a| {
+                    a.abilities
+                        .iter()
+                        .filter(|x| x.trigger.on() == On::Spell)
+                        .collect()
+                })
+                .unwrap_or_default();
+            push_abilities(s, &list, &ctx);
+        } else {
+            push_own_abilities(s, cid, On::Spell, &ctx);
+        }
+        fire_ally_play(s, p, iid, cid, CardType::Spell, enhanced);
         return;
     }
-    let b = s.new_board_card(h.card, Some(&h));
-    let fanfare = board_abilities_on(&b, On::Fanfare);
+    let mut b = s.new_board_card(cid, Some(&h));
+    if form == PlayForm::Crystallize {
+        // 結晶: カウントダウンアミュレットとして場に出る
+        b.is_follower = false;
+        b.ext.crystal = true;
+        b.countdown = abilities_of(cid)
+            .crystallize
+            .as_ref()
+            .and_then(|a| a.countdown);
+        b.attack = 0;
+        b.defense = 0;
+        b.max_defense = 0;
+        b.max_attacks = 0;
+    }
+    let fanfare = if suppressed {
+        Vec::new()
+    } else {
+        board_abilities_on(&b, On::Fanfare)
+    };
+    let played_as = if form == PlayForm::Crystallize {
+        CardType::Amulet
+    } else {
+        cd.ctype
+    };
     enter_board(s, p, b);
     push_abilities(s, &fanfare, &ctx);
+    fire_ally_play(s, p, iid, cid, played_as, enhanced);
 }
 
 fn apply_attack(s: &mut GameState, attacker_iid: Iid, target: AttackTarget) {
@@ -901,9 +1084,14 @@ fn apply_attack(s: &mut GameState, attacker_iid: Iid, target: AttackTarget) {
     else {
         return;
     };
+    if target.is_none() && s.players[p].ext.rotation {
+        let pl = &mut s.players[p];
+        pl.ext.attacked_leader_turn = pl.turn_count;
+    }
     let a = &mut s.players[p].board.make_mut()[ai];
     a.attacks_this_turn += 1;
     a.keywords = a.keywords.without(AMBUSH); // 攻撃すると潜伏を失う
+    a.ext.timed_keywords = a.ext.timed_keywords.without(AMBUSH);
     let (a_card, a_super, a_attack, a_x) = (
         a.card,
         a.evolve == Evolve::SuperEvolved,
@@ -961,6 +1149,11 @@ fn apply_attack(s: &mut GameState, attacker_iid: Iid, target: AttackTarget) {
         }
     }
     let _ = a_card;
+    // 「自分（相手）のフォロワーが攻撃するとき」は戦闘より先、【攻撃時】の後に解決する（docs/rules.md 12章）
+    let attack_triggers = fire_attack_triggers(s, attacker_iid, target.is_none());
+    for q in attack_triggers.into_iter().rev() {
+        push_abilities(s, &[q.ability], &q.ctx);
+    }
     for (ab, ctx) in triggered.into_iter().rev() {
         push_abilities(s, &[ab], &ctx);
     }
@@ -974,9 +1167,9 @@ fn combat(s: &mut GameState, attacker_iid: Iid, target: AttackTarget) {
     let Some(t) = target else {
         let amount = a.attack_value();
         let drain = a.has_keyword(DRAIN);
-        s.players[opponent(p)].leader_hp -= amount;
+        let dealt = damage_leader(s, opponent(p), amount);
         if drain {
-            heal_leader(s, p, amount);
+            heal_leader(s, p, dealt);
         }
         s.check_leaders();
         return;
@@ -1021,7 +1214,8 @@ fn combat_end(s: &mut GameState) {
     if !at.super_evolved || !at.defender_destroyed {
         return;
     }
-    s.players[opponent(s.active)].leader_hp -= 1;
+    let opp = opponent(s.active);
+    damage_leader(s, opp, 1);
     s.check_leaders();
 }
 
