@@ -1,0 +1,55 @@
+{
+  "name": "shadowverse-wb-sim",
+  "version": "1.0.0",
+  "description": "Shadowverse: Worlds Beyond 非公式対戦シミュレータ",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "wasm": "node scripts/build-wasm.mjs",
+    "predev": "node scripts/build-wasm.mjs",
+    "prebuild": "node scripts/build-wasm.mjs",
+    "pretest": "node scripts/build-wasm.mjs",
+    "cards": "node scripts/convert-cards.ts",
+    "sim": "node scripts/vite-run.mjs scripts/simulate-main.ts",
+    "game": "node scripts/vite-run.mjs scripts/game-main.ts",
+    "sim-report": "node scripts/vite-run.mjs scripts/sim-report-main.ts",
+    "svwb": "node scripts/svwb.mjs",
+    "compare": "node scripts/svwb.mjs compare",
+    "rhino-compare": "node scripts/svwb.mjs rhino-compare",
+    "deck-compare": "node scripts/svwb.mjs deck-compare",
+    "meta": "node scripts/svwb.mjs meta",
+    "af-compare": "node scripts/svwb.mjs rhino-compare --subject af",
+    "spellwitch-compare": "node scripts/svwb.mjs rhino-compare --subject spellwitch",
+    "bishop-compare": "node scripts/svwb.mjs rhino-compare --subject bishop",
+    "dragon-compare": "node scripts/svwb.mjs rhino-compare --subject dragon",
+    "nightmare-compare": "node scripts/svwb.mjs rhino-compare --subject nightmare",
+    "royal-compare": "node scripts/svwb.mjs rhino-compare --subject royal",
+    "yardstick": "node scripts/svwb.mjs yardstick",
+    "td": "node scripts/vite-run.mjs scripts/td-main.ts",
+    "rust-data": "node scripts/vite-run.mjs scripts/rust-data-main.ts",
+    "pack-run": "node scripts/vite-run.mjs scripts/pack-run-main.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wistery-k/Shadowverse-Wb-Sim.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wistery-k/Shadowverse-Wb-Sim/issues"
+  },
+  "homepage": "https://github.com/wistery-k/Shadowverse-Wb-Sim#readme",
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "preact": "^11.0.0"
+  },
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+# 取得した生データ・キャッシュ（コミットしない）
+data/raw/
+.cache/
+*.log
+# Rust 版エンジンのビルド結果と、書き出したデータ（npm run rust-data で生成）
+rust/target/
+rust/engine/data/
+# エンジンと AI の WASM（npm run wasm で生成）
+src/engine/svwb.wasm

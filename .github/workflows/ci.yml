@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+jobs:
+  # 画面・スクリプト（TypeScript）。エンジンと AI は WASM（npm test の前に npm run wasm で作る）
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: rustup target add wasm32-unknown-unknown
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # エンジンと AI（rust/）: 書式・lint・単体テストと、決まった試合の結果が保存したものと同じか（rust/engine/tests/golden.rs）
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run rust-data
+      - run: cargo fmt --check && cargo clippy --release --workspace --all-targets -- -D warnings
+        working-directory: rust
+      - run: cargo test --release --workspace
+        working-directory: rust
