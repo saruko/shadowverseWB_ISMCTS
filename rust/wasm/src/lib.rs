@@ -13,6 +13,7 @@ use svwb_engine::ai::lethal_hint::lethal_hint;
 use svwb_engine::ai::registry::create_agent;
 use svwb_engine::ai::search::ScoreParts;
 use svwb_engine::ai::think::Thought;
+use svwb_engine::ai::valuenet::set_rotation_value_net;
 use svwb_engine::ai::{Agent, Rng};
 use svwb_engine::data::{data, CardIdx};
 use svwb_engine::game::{attack_reach, attack_targets, fusion_candidates};
@@ -230,6 +231,15 @@ fn dispatch(req: &Json) -> R<Json> {
             Some(next) => state_to_json(&next),
             None => Json::Null,
         },
+        // ローテーションの試合の補正（data/value-net-rotation.json の中身の文字列）を設定する。WASM には埋め込んでいないので、
+        // 渡さなければローテーションの試合は補正なしで考える（Node は src/engine/wasm.ts が読み込むたびに渡す）
+        "setRotationNet" => {
+            let Json::Str(text) = field(req, "text")? else {
+                return Err(Fail::Error("text はモデルの JSON の文字列".into()));
+            };
+            set_rotation_value_net(text)?;
+            Json::Null
+        }
         // 局面を読んで書き出す（サンドボックスの読み込みで、形を確かめてエンジンの書き出す形にそろえる）
         "normalizeState" => state_to_json(&state(req)?),
         "isLegal" => Json::Bool(is_legal(&state(req)?, &action(req, "action")?)),

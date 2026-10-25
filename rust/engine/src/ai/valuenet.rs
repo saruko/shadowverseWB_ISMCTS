@@ -482,6 +482,42 @@ pub fn default_value_net() -> &'static ValueNet {
     })
 }
 
+/// ローテーションの試合の補正（data/value-net-rotation.json。2026-10-26 の m1）。ネイティブの svwb は埋め込んだものを使う。
+/// ブラウザ用の WASM には大きさのため埋め込まず（約 9 → 21 MB になる）、使う側が set_rotation_value_net で渡す（Node は src/engine/wasm.ts）
+static ROTATION_NET: OnceLock<ValueNet> = OnceLock::new();
+
+fn rotation_net_from(json: &str) -> Result<ValueNet, String> {
+    let raw: RawValueNet =
+        serde_json::from_str(json).map_err(|e| format!("ローテーションの補正を読めません: {e}"))?;
+    let net = ValueNet::new(raw)?;
+    if !net.base_weights.is_empty() {
+        return Err("ローテーションの補正は baseWeights なしのモデルの想定です".into());
+    }
+    Ok(net)
+}
+
+/// ローテーションの試合の補正を JSON から設定する（WASM 用。設定済みなら誤り）
+pub fn set_rotation_value_net(json: &str) -> Result<(), String> {
+    ROTATION_NET
+        .set(rotation_net_from(json)?)
+        .map_err(|_| "ローテーションの補正はもう設定されています".into())
+}
+
+/// ローテーションの試合の補正（WASM で渡されていなければ None）
+pub fn rotation_value_net() -> Option<&'static ValueNet> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        Some(ROTATION_NET.get_or_init(|| {
+            rotation_net_from(include_str!("../../data/value-net-rotation.json"))
+                .expect("data/value-net-rotation.json")
+        }))
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        ROTATION_NET.get()
+    }
+}
+
 /// 疎な入力（添字と値。TypeScript 版の Map と同じく、最初に現れた順）
 struct Acc(Vec<(usize, f64)>);
 
@@ -628,7 +664,12 @@ thread_local! {
     static BOARD_BUF: RefCell<BoardBuf> = RefCell::new(BoardBuf::default());
 }
 
-/// 探索の extraEval（既定の補正。評価の点数の単位）
+/// 探索の extraEval（既定の補正。評価の点数の単位）。
+/// どちらかのデッキがローテーションなら、ローテーションの補正を使う（既定の補正はローテーションのカードを入力に持たず、
+/// 流用すると点数がカードの中身と関係なく動く）。ローテーションの補正が無ければ（渡していない WASM）補正なし
 pub fn value_net_eval(s: &GameState, p: PlayerIndex, phase: ValuePhase) -> f64 {
+    if s.players.iter().any(|pl| pl.ext.rotation) {
+        return rotation_value_net().map_or(0.0, |net| net.eval(s, p, phase));
+    }
     default_value_net().eval(s, p, phase)
 }

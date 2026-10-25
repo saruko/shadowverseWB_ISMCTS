@@ -7,6 +7,7 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 
 - フォーマット: スターター / カードプール: 第1弾「伝説の幕開け」＋ベーシックのみ
 - ローテーション対応（ユーザー確認済み 2026-10-25）: カードデータに今のローテーションのカード（is_include_rotation、能力は今のもの）も入れ、フォーマット `ROTATION`（`src/cards/format.ts`）を足した。能力はローテーションの全カード・トークン・クレストに定義した（2026-10-25。`src/cards/abilities/rotation/`、書き方は `docs/rotation-authoring.md`）。スターターの挙動（ゴールデンテスト・物差し）は変えない: ランダムなデッキ・環境の案はスターターのカード（エンジンのデータの `starter`）から作る
+- ローテーションの補正（ユーザー判断 2026-10-26）: どちらかのデッキがローテーションの試合は `data/value-net-rotation.json`、両者スターターなら `data/value-net.json` を使う（`rust/engine/src/ai/valuenet.rs` の `value_net_eval`）。ローテーションの補正はブラウザの WASM に埋め込まない（大きさのため。ネイティブは埋め込み、Node の WASM には `src/engine/wasm.ts` が渡す）。ブラウザでの読み込みは、ローテーションのデッキを画面に出すときに「必要なときだけ読み込む」方針で作る。経緯は `docs/ai-notes.md`「本番: m0 の自己対戦 6 万試合で学び直す」
 - サーバーなし。静的サイト（このリポジトリでは GitHub Pages に公開しない。ユーザー判断 2026-10-25）
 - **画像・音源・フォント等のアセットは一切使わない**（CDN 読み込み、絵文字依存の装飾、base64 埋め込み画像も不可）。表現は CSS とテキストのみ。クラスの識別は色＋文字で行う
 - スタック: TypeScript(strict) + Vite + 軽量UI(Preact想定) + Vitest。エンジンと AI は Rust（`rust/`）で、ブラウザでは WASM にして使う

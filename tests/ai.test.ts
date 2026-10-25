@@ -1,11 +1,13 @@
 // AI のテスト（TypeScript 側）。AI の本体は Rust（rust/engine/src/ai）で、その単体テストは rust/engine/src/ai/tests にある。
 // ここでは、WASM を通した AI どうしの対戦（不変条件の検査つき）と、TypeScript 側で持つ AI のデータ・学習用のモデルの形を確かめる。
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MODEL_FEATURES, MULLIGAN_MODEL, MULLIGAN_ROLES, MULLIGAN_WEIGHTS } from "../src/ai/data";
 import { agentOf } from "../src/ai/registry";
-import { DEFAULT_DECKS } from "../src/cards/defaultDecks";
+import { DEFAULT_DECKS, ROTATION_DECKS } from "../src/cards/defaultDecks";
 import { rngFrom } from "../src/engine";
+import { callEngine } from "../src/engine/wasm";
 import { randomDeck } from "../src/sim/decks";
 import { playMatch } from "../src/sim/match";
 import {
@@ -90,6 +92,15 @@ describe("AI のデータ", () => {
       expect(deck, name).toBeDefined();
       for (const f of Object.keys(deck!.features)) expect(MODEL_FEATURES).toContain(f);
     }
+  });
+
+  it("ローテーションの試合の補正（data/value-net-rotation.json）は、ローテーションのデッキのカードを入力に持ち、Node では WASM に渡してある", () => {
+    const text = readFileSync(__SVWB_ROTATION_NET_PATH__, "utf8");
+    const vocab = new Set(parseValueNetModel(JSON.parse(text)).vocab);
+    expect(ROTATION_DECKS.length).toBeGreaterThan(0);
+    for (const d of ROTATION_DECKS) for (const id of d.cards) expect(vocab.has(id), `${d.name} ${id}`).toBe(true);
+    // 読み込んだときに渡してあるので、もう一度渡すと誤りになる（渡していなければ通ってしまう）
+    expect(() => callEngine({ f: "setRotationNet", text })).toThrow(/もう設定されています/);
   });
 });
 

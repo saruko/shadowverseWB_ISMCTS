@@ -36,6 +36,17 @@ function instantiate(module: WebAssembly.Module, instance = new WebAssembly.Inst
   compiled = module;
   wasm = instance.exports as unknown as Exports;
   generation++;
+  // ローテーションの試合の補正は WASM に埋め込んでいない（大きさのため）ので、Node では読み込むたびに渡す。
+  // ブラウザでは渡していない（ローテーションのデッキを画面に出すときに決める）ので、ローテーションの試合は補正なしで考える
+  if (isNode) callEngine({ f: "setRotationNet", text: rotationNetText() });
+}
+
+let rotationNet: string | null = null;
+
+function rotationNetText(): string {
+  const fs = nodeProcess?.getBuiltinModule("node:fs");
+  if (!fs) throw new Error("ローテーションの補正を読めません（Node の fs が使えません）");
+  return (rotationNet ??= fs.readFileSync(__SVWB_ROTATION_NET_PATH__, "utf8"));
 }
 
 function loadSync(): void {

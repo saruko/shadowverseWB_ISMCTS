@@ -8,3 +8,5 @@ declare const __BUILD_DATE__: string;
 declare const __BUILD_DIRTY__: boolean;
 /** Node で読み込むエンジンの WASM の場所（src/engine/svwb.wasm の絶対パス） */
 declare const __SVWB_WASM_PATH__: string;
+/** Node で WASM に渡すローテーションの試合の補正（data/value-net-rotation.json の絶対パス） */
+declare const __SVWB_ROTATION_NET_PATH__: string;

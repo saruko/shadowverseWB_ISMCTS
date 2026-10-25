@@ -4,7 +4,10 @@
 use super::*;
 use crate::ai::aidata::{RawValueNet, RawValueNetLayer};
 use crate::ai::search::{SearchAgent, SearchOptions};
-use crate::ai::valuenet::{default_value_net, ValueNet, ValuePhase};
+use crate::ai::valuenet::{
+    default_value_net, rotation_value_net, set_rotation_value_net, value_net_eval, ValueNet,
+    ValuePhase,
+};
 use std::sync::Arc;
 
 /// 今のカード・クレストの一覧を語彙にしたモデル（valueNet.ts の defaultVocab）
@@ -87,6 +90,35 @@ fn input_ignores_hidden_information() {
         net.encode(&s, q, ValuePhase::End),
         net.encode(&t, q, ValuePhase::End)
     );
+}
+
+#[test]
+fn rotation_games_use_rotation_net() {
+    // 両者がスターターのデッキなら既定の補正（スターターの試合は変わらない）、
+    // どちらかがローテーションのデッキならローテーションの補正（data/value-net-rotation.json）
+    let s = mid_game();
+    assert!(s.players.iter().all(|pl| !pl.ext.rotation));
+    let rot = rotation_value_net().expect("ネイティブはローテーションの補正を埋め込む");
+    for p in 0..2 {
+        assert_eq!(
+            value_net_eval(&s, p, ValuePhase::End),
+            default_value_net().eval(&s, p, ValuePhase::End)
+        );
+    }
+    let mut t = s.clone();
+    t.players[1].ext.rotation = true;
+    for p in 0..2 {
+        assert_eq!(
+            value_net_eval(&t, p, ValuePhase::End),
+            rot.eval(&t, p, ValuePhase::End)
+        );
+    }
+    assert_ne!(
+        rot.eval(&t, 0, ValuePhase::End),
+        default_value_net().eval(&t, 0, ValuePhase::End)
+    );
+    // 一度決まった補正は設定し直せない（WASM で渡し直すのは読み込み直したときだけ）
+    assert!(set_rotation_value_net(include_str!("../../../data/value-net-rotation.json")).is_err());
 }
 
 #[test]

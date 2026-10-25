@@ -2,7 +2,9 @@
 // カード・クレストの基本情報と、テキストから読み取る常在型キーワード等（registry.ts の staticOf と同じもの）、
 // カード能力の DSL（src/cards/abilities。関数を含まない JSON）、アポカリプスデッキ、デフォルトデッキを 1 つの JSON にまとめる。
 // 探索 AI が使うデータ（評価関数の重み、学習した評価の補正、マリガンの係数等）は ai-data.json に書き出す。
-// 出力は rust/engine/data/ の 2 つ（生成物なのでコミットしない）。
+// ローテーションの試合の補正（data/value-net-rotation.json）は、そのままの形で value-net-rotation.json に写す（ネイティブの svwb だけが埋め込む。
+// ブラウザ用の WASM には入れない。rust/engine/src/ai/valuenet.rs の rotation_value_net）。
+// 出力は rust/engine/data/ の 3 つ（生成物なのでコミットしない）。
 // あわせて、元になったファイルの中身の指紋を sources.txt に書く。rust/engine/build.rs がビルドのときに確かめ、
 // 元のファイルが変わったのに書き出し直していなければ、ビルドを止める（古い補正などを埋め込まないように）。
 
@@ -19,6 +21,8 @@ import valueNet from "../data/value-net.json";
 
 export const RUST_DATA_PATH = "rust/engine/data/engine-data.json";
 export const RUST_AI_DATA_PATH = "rust/engine/data/ai-data.json";
+/** ローテーションの試合の補正（ネイティブでは埋め込み、Node の WASM には src/engine/wasm.ts が渡す） */
+export const ROTATION_NET_PATH = "data/value-net-rotation.json";
 
 /** 書き出すデータの元になるファイル（ディレクトリと、その下で数えるファイル名）。元データの data/raw/ は除く */
 const SOURCES: [string, RegExp][] = [
@@ -118,7 +122,11 @@ export async function main(argv: string[]): Promise<number> {
   const quiet = argv.includes("--quiet");
   const [out = RUST_DATA_PATH, aiOut = RUST_AI_DATA_PATH] = argv.filter((a) => a !== "--quiet");
   mkdirSync(dirname(out), { recursive: true });
-  const changed = [writeIfChanged(out, JSON.stringify(engineData())), writeIfChanged(aiOut, JSON.stringify(aiData()))];
+  const changed = [
+    writeIfChanged(out, JSON.stringify(engineData())),
+    writeIfChanged(aiOut, JSON.stringify(aiData())),
+    writeIfChanged(join(dirname(aiOut), "value-net-rotation.json"), readFileSync(ROTATION_NET_PATH, "utf8")),
+  ];
   writeIfChanged(join(dirname(aiOut), "sources.txt"), sourcesText());
   if (!quiet) console.log(changed.some((c) => c) ? `${out}・${aiOut} に書き出しました` : `${out}・${aiOut} は変わっていません`);
   return 0;

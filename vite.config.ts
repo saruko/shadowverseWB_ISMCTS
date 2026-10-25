@@ -27,6 +27,8 @@ export default defineConfig(({ command, isSsrBuild }) => ({
     __BUILD_DIRTY__: JSON.stringify(git.dirty),
     // Node（テスト・スクリプト）で読み込むエンジンの WASM（src/engine/wasm.ts）。ブラウザ向けのビルドでは使わない（このマシンのパスを埋め込まない）
     __SVWB_WASM_PATH__: JSON.stringify(command === "build" && !isSsrBuild ? "" : fileURLToPath(new URL("./src/engine/svwb.wasm", import.meta.url))),
+    // Node で WASM に渡すローテーションの試合の補正（WASM には埋め込んでいない）。ブラウザ向けのビルドでは使わない
+    __SVWB_ROTATION_NET_PATH__: JSON.stringify(command === "build" && !isSsrBuild ? "" : fileURLToPath(new URL("./data/value-net-rotation.json", import.meta.url))),
   },
   test: {
     include: ["tests/**/*.test.ts"],
