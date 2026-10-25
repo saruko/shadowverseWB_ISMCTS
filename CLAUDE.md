@@ -6,6 +6,7 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 ## 決定済みの前提（変更するときはユーザーに確認）
 
 - フォーマット: スターター / カードプール: 第1弾「伝説の幕開け」＋ベーシックのみ
+- ローテーション対応（ユーザー確認済み 2026-10-25）: カードデータに今のローテーションのカード（is_include_rotation、能力は今のもの）も入れ、フォーマット `ROTATION`（`src/cards/format.ts`）を足した。能力の定義はまだ一部。スターターの挙動（ゴールデンテスト・物差し）は変えない: ランダムなデッキ・環境の案はスターターのカード（エンジンのデータの `starter`）から作る
 - サーバーなし。静的サイトとして GitHub Pages で公開
 - **画像・音源・フォント等のアセットは一切使わない**（CDN 読み込み、絵文字依存の装飾、base64 埋め込み画像も不可）。表現は CSS とテキストのみ。クラスの識別は色＋文字で行う
 - スタック: TypeScript(strict) + Vite + 軽量UI(Preact想定) + Vitest。エンジンと AI は Rust（`rust/`）で、ブラウザでは WASM にして使う
@@ -13,6 +14,7 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 - 自己対戦の高速化のため、エンジンと AI を Rust に移した（`rust/README.md`、検討は `docs/ai-notes.md`「エンジンを Rust に移す」）。段階 4 で TypeScript 版のエンジン・AI を消し、ブラウザも WASM を使う（ユーザー確認済み 2026-10-15）。ブラウザ向けにビルドした `.wasm` をサイトに置くのは可（ユーザー確認済み 2026-10-15。画像・音・フォント等のアセットの禁止はそのまま）。開発には Rust（cargo と `rustup target add wasm32-unknown-unknown`）が要る
 - カードデータは、ユーザーが提供した公式サイトのカード一覧APIのレスポンス（`data/raw/*.json`）を `npm run cards`（`scripts/convert-cards.ts`）で `data/cards.json` と `data/crests.json` に変換する。作業環境からは公式サイト・攻略サイトにアクセスできない
 - 元データはブランチ `wistery-k-patch-1` の `cardList.json`〜`cardList_7.json`（全198枚、offset 0〜180）。再生成するときは `git show origin/wistery-k-patch-1:<file> > data/raw/<file>` で取り出す
+- ローテーション対応後は、公式サイトにアクセスできる環境なら `npm run fetch-cards`（`scripts/fetch-raw.ts`）で全カードの元データを `data/raw/` に取り直せる。新弾の実装後は取り直して `npm run cards` する
 - ドキュメント・UI 文言・コミットメッセージは日本語。識別子・コードコメントの用語は英語でもよいが、ゲーム用語は `docs/rules.md` の対応表に従う
 
 ## アーキテクチャ方針
@@ -45,7 +47,9 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 
 - 型は `src/cards/types.ts`、検証は `src/cards/validate.ts`（手書き）。`npm test` で全カードを検証する
 - `data/cards.json` を手で編集しない。変換スクリプトを直して再生成する
-- 元データには第2弾以降のカードも含まれる。カードIDの3桁目でセットを判別する（0=ベーシック、1=第1弾、2=第2弾…）。トークンは9始まりで、プールのカードから参照されるものだけを含める
+- 元データには第2弾以降のカードも含まれる。セットは API 形式の元データのセットID（card_set_id）で判別する（カードIDの2〜3桁目とも合う: 00=ベーシック、01=第1弾、02=第2弾…）。トークンは9始まりで、プールのカードから参照されるものだけを含める
+- 同名の再録（第1弾のカードが第8弾にもある等）は別のIDで両方入る。名前からカードを引くとき（`CARD_BY_NAME`・能力定義の `id()`）は先に出た版（ID の小さい方）になる
+- スターターのセットのカードは当時の能力、それ以外は今の能力。スターターとローテーションの両方で使うカードで当時と今の能力が違えば、`npm run cards` が警告する
 - 能力調整されたカードの当時の能力は `data/starter-overrides.json`（手で管理、コミットする）に書き、変換時に上書きする
 - 元データの変換スクリプトは `scripts/` に置く。元データは `data/raw/`（`.gitignore` 対象）に置く。**コミットするのは整形後の `data/cards.json` のみ**（元データはコミットしない）
 - カード画像は取得・保存しない

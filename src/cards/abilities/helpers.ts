@@ -4,7 +4,9 @@ import rawCards from "../../../data/cards.json";
 import type { Ability, CardFilter, Condition, Duration, Effect, Target, Trigger, Value } from "../../engine/dsl";
 import type { StaticKeyword } from "../../engine/types";
 
-const ID_BY_NAME = new Map((rawCards as { id: string; name: string }[]).map((c) => [c.name, c.id]));
+// 同名の再録（第1弾のカードが第8弾にもある等）は、先に出た版（ID の小さい方。cards.json は ID 順）を引く
+const ID_BY_NAME = new Map<string, string>();
+for (const c of rawCards as { id: string; name: string }[]) if (!ID_BY_NAME.has(c.name)) ID_BY_NAME.set(c.name, c.id);
 
 /** カード名からカードIDを引く（定義の読みやすさのため名前で書く） */
 export function id(name: string): string {

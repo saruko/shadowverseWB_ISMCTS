@@ -30,13 +30,36 @@ export type CardType = (typeof CARD_TYPES)[number];
 export const RARITIES = ["bronze", "silver", "gold", "legend"] as const;
 export type Rarity = (typeof RARITIES)[number];
 
-/** 収録セット。token はデッキに入れられない生成専用カード。 */
-export const CARD_SETS = ["basic", "legend_dawn", "token"] as const;
+/** 収録セット。token はデッキに入れられない生成専用カード。第2弾以降は弾の番号で呼ぶ。 */
+export const CARD_SETS = [
+  "basic",
+  "legend_dawn",
+  "set_02",
+  "set_03",
+  "set_04",
+  "set_05",
+  "set_06",
+  "set_07",
+  "set_08",
+  "set_09",
+  "set_10",
+  "token",
+] as const;
 export type CardSet = (typeof CARD_SETS)[number];
 
 export const SET_NAMES: Record<CardSet, string> = {
   basic: "ベーシック",
   legend_dawn: "伝説の幕開け",
+  set_02: "インフィニティ・エボルヴ",
+  set_03: "絶傑の継承者",
+  set_04: "蒼空の六竜",
+  set_05: "花酔遊戯",
+  set_06: "アポカリプス・パクト",
+  set_07: "神殺し・アナテマ",
+  set_08: "クロニクル・オブ・デスティニー",
+  set_09: "アズヴォルト・レヴナント",
+  // 2026-10-28 実装。公式データにまだ無いので、名前は攻略サイトの表記（公式データが入ったら合わせる）
+  set_10: "ニーゲルヘリア神殺事件",
   token: "トークン",
 };
 
@@ -64,6 +87,8 @@ interface CardBase {
    * （公式データの is_starter_ability_changed、または data/starter-overrides.json で上書き）
    */
   starterAbilityChanged?: true;
+  /** 今のローテーションで使える（公式データの is_include_rotation。新弾のたびに変わる） */
+  rotation?: true;
 }
 
 export interface FollowerCard extends CardBase {

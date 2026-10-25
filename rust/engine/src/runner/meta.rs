@@ -526,7 +526,7 @@ fn cut_order(d: &MetaDeck, cards: &[CardIdx]) -> Vec<(CardIdx, f64, f64)> {
     out
 }
 
-/// 足すカード Y ごとの案（変更）。Y はクラスとニュートラルのカード（pool があればそれだけ）で、3 枚未満のもの
+/// 足すカード Y ごとの案（変更）。Y はクラスとニュートラルのスターターのカード（pool があればそれだけ）で、3 枚未満のもの
 fn candidates(
     cards: &[CardIdx],
     cuts: &[(CardIdx, f64, f64)],
@@ -536,7 +536,7 @@ fn candidates(
     let mut out = Vec::new();
     for (i, c) in data().cards.iter().enumerate() {
         let y = i as CardIdx;
-        if c.token || (c.class != class && c.class != ClassId::Neutral) {
+        if !c.starter || (c.class != class && c.class != ClassId::Neutral) {
             continue;
         }
         if pool.is_some_and(|p| !p.contains(&y)) {

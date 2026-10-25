@@ -52,6 +52,7 @@ function checkCard(raw: unknown, where: string, problems: string[]): void {
   if (raw.starterAbilityChanged !== undefined && raw.starterAbilityChanged !== true) {
     p("starterAbilityChanged は true か省略が必要です");
   }
+  if (raw.rotation !== undefined && raw.rotation !== true) p("rotation は true か省略が必要です");
 
   if (raw.crest !== undefined && (typeof raw.crest !== "string" || raw.crest === "")) {
     p("crest は空でない文字列か省略が必要です");

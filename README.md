@@ -17,8 +17,8 @@
 
 ## 対象範囲
 
-- **フォーマット**: スターター
-- **カードプール**: 第1弾「伝説の幕開け」＋ベーシック
+- **フォーマット**: スターター（ローテーションに対応中。カードデータとフォーマットの定義は入れたが、能力の定義は一部のみ）
+- **カードプール**: 第1弾「伝説の幕開け」＋ベーシック。ローテーション用に、今のローテーションのカードもデータに含む
 - **アセット**: 画像・音源・外部フォントなどは使用しない。UI は HTML/CSS とテキストのみで構成する
 - **サーバー**: なし（静的ファイルのみ。AI の思考もブラウザ内で完結）
 
@@ -68,6 +68,7 @@ npm run dev        # 開発サーバー
 npm test           # テスト
 npm run typecheck  # 型チェック
 npm run build      # 本番ビルド（dist/）
+npm run fetch-cards # 公式カード一覧APIのレスポンスを data/raw/ に取得（全カード。1 秒ずつ待って取る）
 npm run cards      # data/raw/*.json（公式カード一覧APIのレスポンス）から data/cards.json・crests.json を生成
 npm run sim        # デフォルトデッキの AI 同士の総当たり（例: npm run sim -- --games 50 --agents greedy,random）
 npm run compare    # 探索 AI の設定同士の比較（例: npm run compare -- 105 '{}' '{"lethal":false}'）

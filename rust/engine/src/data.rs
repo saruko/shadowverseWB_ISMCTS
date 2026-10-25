@@ -844,6 +844,8 @@ pub struct Card {
     pub enhance: Option<i32>,
     /// デッキに入れられない生成専用カード
     pub token: bool,
+    /// スターターのデッキに入れられる（ランダムなデッキ・環境の案はこのカードから作る）
+    pub starter: bool,
 }
 
 #[derive(Deserialize, Debug)]

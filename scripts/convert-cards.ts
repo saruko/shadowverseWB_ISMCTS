@@ -10,7 +10,12 @@
 // クレスト（API形式の specific_effect_card_info）は data/crests.json に書き出す。
 // 最後に data/starter-overrides.json（手で管理する当時の能力への上書き）を適用する。
 //
-// カードID（8桁）の構成: [0] 1=通常 9=トークン / [2] セット 0=ベーシック 1=第1弾 2=第2弾…
+// カードプールは、スターター（ベーシック・第1弾）と、今のローテーションで使えるカード（is_include_rotation）、
+// それらから参照されるカード・トークン。能力は、スターターのセットのカードは当時の能力（starter_card）、
+// それ以外は今の能力を使う。ベーシック等の両方に入るカードで当時と今の能力が違えば警告する（1 つの ID に 1 つの能力しか持てないため）。
+// API 形式の元データは npm run fetch-cards（scripts/fetch-raw.ts）で公式サイトから取得できる。
+//
+// カードID（8桁）の構成: [0] 1=通常 9=トークン / [1..2] セット 00=ベーシック 01=第1弾 02=第2弾…
 // / [3] クラス / [4] レアリティ / [5] 1=フォロワー 2=アミュレット 3=スペル
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
@@ -24,9 +29,23 @@ const CRESTS_FILE = "data/crests.json";
 /** specific_effect_card_info の specific_effect_type。1 はクレスト */
 const SPECIFIC_EFFECT_CREST = 1;
 
-/** スターターで使えるセット（カードIDの3桁目） */
+/** スターターで使えるセット（カードIDの3桁目。API 形式の元データが無いカードのセットもこれで決める） */
 const POOL_SETS: Record<string, CardSet> = { "0": "basic", "1": "legend_dawn" };
-const API_SETS: Record<number, CardSet> = { 10000: "basic", 10001: "legend_dawn", 90000: "token" };
+const STARTER_SET_IDS = new Set([10000, 10001]);
+const API_SETS: Record<number, CardSet> = {
+  10000: "basic",
+  10001: "legend_dawn",
+  10002: "set_02",
+  10003: "set_03",
+  10004: "set_04",
+  10005: "set_05",
+  10006: "set_06",
+  10007: "set_07",
+  10008: "set_08",
+  10009: "set_09",
+  10010: "set_10",
+  90000: "token",
+};
 const CLASSES: Record<number, ClassId> = {
   0: "neutral",
   1: "elf",
@@ -62,12 +81,14 @@ interface ApiCardFields extends RawCardFields {
 interface ApiCommon extends ApiCardFields {
   starter_card: ApiCardFields | null;
   is_starter_ability_changed: boolean;
+  is_include_rotation: boolean;
 }
 interface ApiResponse {
   data: {
     cards: Record<string, { related_card_ids: number[]; specific_effect_card_ids: number[] }>;
     card_details: Record<string, { common: ApiCommon }>;
     tribe_names: Record<string, string>;
+    card_set_names?: Record<string, string>;
     /** 該当が無いときは空配列になる */
     specific_effect_card_info:
       | Record<string, { specific_effect_type: number; cost: number; skill_text: string }>
@@ -84,6 +105,7 @@ interface Source {
     fields: ApiCardFields;
     setId: number;
     changed: boolean;
+    rotation: boolean;
     related: number[];
     specificEffects: number[];
   };
@@ -128,6 +150,8 @@ const referencedNames = (text: string): string[] =>
 
 const sources = new Map<string, Source>();
 const tribeNames: Record<string, string> = {};
+/** 公式のパック名（報告にだけ使う） */
+const setNames: Record<string, string> = {};
 const specificEffects = new Map<string, { type: number; text: string }>();
 
 const files = readdirSync(RAW_DIR).filter((f) => f.endsWith(".json")).sort();
@@ -137,19 +161,26 @@ for (const file of files) {
   if (typeof json === "object" && json !== null && "data" in json) {
     const { data } = json as ApiResponse;
     Object.assign(tribeNames, data.tribe_names);
+    Object.assign(setNames, data.card_set_names ?? {});
     for (const [id, e] of Object.entries(data.specific_effect_card_info)) {
       specificEffects.set(id, { type: e.specific_effect_type, text: e.skill_text });
     }
     for (const [id, { common }] of Object.entries(data.card_details)) {
-      // スターターでは当時の能力（starter_card）を使う。IDは通常版のものを使う。
-      const fields = common.starter_card ?? common;
+      // スターターのセットのカードは当時の能力（starter_card）を使う。それ以外は今の能力。IDは通常版のものを使う。
+      const starterSet = STARTER_SET_IDS.has(common.card_set_id);
+      const fields = starterSet ? (common.starter_card ?? common) : common;
+      const rotation = common.is_include_rotation;
+      if (starterSet && rotation && common.starter_card && common.starter_card.skill_text !== common.skill_text) {
+        problems.add(`${id} ${common.name}: スターターとローテーションの両方で使うが、当時と今の能力が違います`);
+      }
       const c = data.cards[id];
       sources.set(id, {
         fields,
         api: {
           fields,
           setId: common.card_set_id,
-          changed: common.is_starter_ability_changed,
+          changed: starterSet && common.is_starter_ability_changed,
+          rotation,
           related: c?.related_card_ids ?? [],
           specificEffects: c?.specific_effect_card_ids ?? [],
         },
@@ -164,7 +195,7 @@ for (const file of files) {
   }
 }
 
-// ---- スターターのカードプール（ベーシック・第1弾と、そこから参照されるトークン） ----
+// ---- カードプール（ベーシック・第1弾・今のローテーションのカードと、そこから参照されるカード・トークン） ----
 
 const idByName = new Map<string, string>();
 for (const [id, s] of sources) idByName.set(s.fields.name, id);
@@ -181,14 +212,19 @@ for (const [id, s] of sources) {
   relatedOf.set(id, [...refs].sort());
 }
 
-const isPoolCard = (id: string) => id.startsWith("1") && (id[2] ?? "") in POOL_SETS;
+/** スターターのセットのカード（API 形式ならセットID、無ければカードIDの3桁目で判別） */
+const isStarterCard = (id: string) => {
+  const setId = sources.get(id)?.api?.setId;
+  return setId !== undefined ? STARTER_SET_IDS.has(setId) : id.startsWith("1") && (id[2] ?? "") in POOL_SETS;
+};
+const isPoolCard = (id: string) => isStarterCard(id) || sources.get(id)?.api?.rotation === true;
 const pool = new Set([...sources.keys()].filter(isPoolCard));
 const queue = [...pool];
 while (queue.length > 0) {
   const id = queue.pop() as string;
   for (const ref of relatedOf.get(id) ?? []) {
     if (pool.has(ref)) continue;
-    if (!ref.startsWith("9")) problems.add(`${id}: 第2弾以降のカード ${ref} を参照しています`);
+    if (isStarterCard(id) && !ref.startsWith("9")) problems.add(`${id}: 第2弾以降のカード ${ref} を参照しています`);
     pool.add(ref);
     queue.push(ref);
   }
@@ -201,6 +237,7 @@ const overrides = JSON.parse(readFileSync(OVERRIDES_FILE, "utf8")) as Record<str
 // クレスト: 能力テキストに『クレスト：カード名』がある
 const crests: Crest[] = [];
 const crestOf = new Map<string, string>();
+const unsupportedEffects = new Set<string>();
 for (const [id, s] of sources) {
   if (!pool.has(id)) continue;
   for (const ref of (s.api?.specificEffects ?? []).map(String)) {
@@ -210,7 +247,9 @@ for (const [id, s] of sources) {
       continue;
     }
     if (e.type !== SPECIFIC_EFFECT_CREST) {
-      problems.add(`${id} ${s.fields.name}: 未対応の特殊効果の種類です: ${e.type}`);
+      // ローテーションのカードのクレスト以外の特殊効果（信仰値など）は、能力を実装するときに扱う
+      if (isStarterCard(id)) problems.add(`${id} ${s.fields.name}: 未対応の特殊効果の種類です: ${e.type}`);
+      else unsupportedEffects.add(`${id} ${s.fields.name}（種類 ${e.type}）`);
       continue;
     }
     const name = `クレスト：${s.fields.name}`;
@@ -234,12 +273,19 @@ for (const id of pool) {
   const isToken = id.startsWith("9");
   if (isToken !== f.is_token) problems.add(`${where}: トークン判定が一致しません`);
 
-  const set: CardSet = isToken ? "token" : lookup(POOL_SETS, id[2] ?? "", "セット", where);
+  // セットは API 形式ならセットIDで決め、カードIDの2〜3桁目（第9弾まで）と食い違えば警告する
+  let set: CardSet = s.api
+    ? lookup(API_SETS, s.api.setId, "セット", where)
+    : isToken
+      ? "token"
+      : lookup(POOL_SETS, id[2] ?? "", "セット", where);
   let type = lookup(ID_TYPES, id[5] ?? "", "カード種類", where);
   let tribes: string[] | null = null;
   if (s.api) {
-    const apiSet = lookup(API_SETS, s.api.setId, "セット", where);
-    if (apiSet !== set) problems.add(`${where}: セットがIDと一致しません (${apiSet})`);
+    const idSet = Number(id.slice(1, 3));
+    if (!isToken && s.api.setId < 10010 && idSet !== s.api.setId - 10000) {
+      problems.add(`${where}: セットがIDと一致しません (${set})`);
+    }
     type = lookup(API_TYPES, s.api.fields.type, "カード種類", where);
     tribes = s.api.fields.tribes
       .filter((t) => t !== 0)
@@ -263,6 +309,7 @@ for (const id of pool) {
     related: relatedOf.get(id) ?? [],
     ...(crestOf.has(id) ? { crest: crestOf.get(id) as string } : {}),
     ...(s.api?.changed || o ? { starterAbilityChanged: true as const } : {}),
+    ...(s.api?.rotation ? { rotation: true as const } : {}),
   };
 
   if (type === "follower") {
@@ -294,12 +341,18 @@ writeFileSync(CRESTS_FILE, JSON.stringify(crests, null, 2) + "\n");
 // ---- 報告 ----
 
 const count = (pred: (c: Card) => boolean) => cards.filter(pred).length;
-console.log(
-  `${files.length} ファイルから ${cards.length} 枚を ${OUT_FILE} に書き出しました` +
-    `（ベーシック ${count((c) => c.set === "basic")}、伝説の幕開け ${count((c) => c.set === "legend_dawn")}、` +
-    `トークン ${count((c) => c.set === "token")}）`,
-);
+const setNameOf = new Map(Object.entries(API_SETS).map(([setId, s]) => [s, setNames[setId] ?? s]));
+setNameOf.set("token", "トークン");
+const perSet = [...new Set(Object.values(API_SETS))]
+  .map((s) => [s, count((c) => c.set === s)] as const)
+  .filter(([, n]) => n > 0)
+  .map(([s, n]) => `${setNameOf.get(s) ?? s} ${n}`);
+console.log(`${files.length} ファイルから ${cards.length} 枚を ${OUT_FILE} に書き出しました（${perSet.join("、")}）`);
+console.log(`今のローテーションで使えるカード: ${count((c) => c.rotation === true)} 枚`);
 console.log(`クレスト ${crests.length} 件を ${CRESTS_FILE} に書き出しました`);
+if (unsupportedEffects.size > 0) {
+  console.log(`クレスト以外の特殊効果を持つローテーションのカード（未対応）: ${[...unsupportedEffects].join("、")}`);
+}
 const changed = cards.filter((c) => c.starterAbilityChanged).map((c) => c.name);
 console.log(`当時の能力に差し替えたカード: ${changed.length > 0 ? changed.join("、") : "なし"}`);
 console.log(`タイプ不明（API形式のデータが無い）: ${count((c) => c.tribes === null)} 枚`);

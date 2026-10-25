@@ -10,7 +10,7 @@
 // カードの行は「枚数 カード名」。カード名の代わりにカードIDも使える。「3x 名前」「3 × 名前」も可。
 // クラスの行は省略でき、その場合はニュートラル以外のカードから決める。
 
-import { ALL_CARDS, CARDS_BY_ID } from "./index";
+import { CARD_BY_NAME, CARDS_BY_ID } from "./index";
 import { CLASS_NAMES, type Card, type ClassId } from "./types";
 
 export type DeckClass = Exclude<ClassId, "neutral">;
@@ -23,7 +23,6 @@ export interface Deck {
   cards: string[];
 }
 
-const CARD_BY_NAME = new Map(ALL_CARDS.map((c) => [c.name, c]));
 
 /** 表示・エクスポート用の並び順（コスト → カードID） */
 export function compareCards(a: Card, b: Card): number {

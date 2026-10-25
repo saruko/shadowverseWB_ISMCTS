@@ -1,6 +1,6 @@
 // フォーマットとデッキ構築ルール。数値の出典・確認状況は docs/rules.md を参照。
 
-import type { Card, CardSet, ClassId } from "./types";
+import { CARD_SETS, type Card, type CardSet, type ClassId } from "./types";
 
 export const DECK_SIZE = 40;
 export const MAX_COPIES = 3;
@@ -10,6 +10,8 @@ export interface Format {
   name: string;
   /** デッキに入れられるセット */
   sets: readonly CardSet[];
+  /** さらに、今のローテーションで使えるカード（Card.rotation）に限る */
+  rotationOnly?: boolean;
 }
 
 /** スターター: 第1弾とベーシックのみ。能力調整されたカードは当時の能力で扱う（cards.json 側で表現）。 */
@@ -18,6 +20,22 @@ export const STARTER: Format = {
   name: "スターター",
   sets: ["basic", "legend_dawn"],
 };
+
+/**
+ * ローテーション: 直近 6 パックとベーシック。どのパックが入るかは新弾のたびに変わるので、
+ * セットでは絞らず公式データの is_include_rotation（Card.rotation）で決める。能力は今のもの。
+ */
+export const ROTATION: Format = {
+  id: "rotation",
+  name: "ローテーション",
+  sets: CARD_SETS.filter((s) => s !== "token"),
+  rotationOnly: true,
+};
+
+/** そのフォーマットのデッキに入れられるカードか */
+export function inFormat(format: Format, card: Card): boolean {
+  return format.sets.includes(card.set) && (!format.rotationOnly || card.rotation === true);
+}
 
 /** デッキ構築ルールに違反していれば理由の一覧を返す。空なら合法。 */
 export function deckProblems(
@@ -33,7 +51,7 @@ export function deckProblems(
 
   const copies = new Map<string, number>();
   for (const card of cards) {
-    if (!format.sets.includes(card.set)) {
+    if (!inFormat(format, card)) {
       problems.push(`${card.name} は${format.name}で使用できません`);
     }
     if (card.class !== "neutral" && card.class !== deckClass) {

@@ -2,7 +2,7 @@
 // npm run rust-data（scripts/rust-data-main.ts）がこれを rust/engine/data/ai-data.json に書き出して Rust に渡す。
 // 重みを変えたら npm run wasm で WASM を作り直し、勝率で確かめてから採用する（CLAUDE.md）。
 
-import { CARDS_BY_ID } from "../cards";
+import { CARD_BY_NAME } from "../cards";
 import { id } from "../cards/abilities/helpers";
 import rolesTable from "../../data/mulligan-roles.json";
 import modelTable from "../../data/mulligan-model.json";
@@ -274,7 +274,7 @@ export type Role = (typeof ROLES)[number];
 /** デッキ名 → カードID → 役割（同じ役割を 2 つ書いたカードは 2 枚分に数える） */
 export type MulliganRoles = Record<string, Record<string, readonly Role[]>>;
 
-const ID_BY_NAME = new Map([...CARDS_BY_ID.values()].map((c) => [c.name, c.id]));
+const ID_BY_NAME = new Map([...CARD_BY_NAME].map(([name, c]) => [name, c.id]));
 
 /** data/mulligan-roles.json（デッキ名 → カード名 → 役割）を検証して、カードIDで引ける形にする */
 export function parseMulliganRoles(raw: unknown): MulliganRoles {

@@ -8,7 +8,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { ALL_CARDS, ALL_CRESTS } from "../src/cards";
+import { ALL_CARDS, ALL_CRESTS, STARTER, inFormat } from "../src/cards";
 import { CARD_ABILITIES, CREST_ABILITIES } from "../src/cards/abilities";
 import { APOCALYPSE_DECK } from "../src/cards/abilities/special";
 import { DEFAULT_DECKS } from "../src/cards/defaultDecks";
@@ -69,6 +69,7 @@ export function engineData() {
         earthSigil: st.earthSigil,
         enhance: enhanceCost(c.text),
         token: c.set === "token",
+        starter: inFormat(STARTER, c),
       };
     }),
     crests: ALL_CRESTS.map((c) => ({ id: c.id, countdown: c.countdown ?? null })),

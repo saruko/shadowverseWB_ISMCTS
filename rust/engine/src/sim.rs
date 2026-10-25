@@ -16,14 +16,14 @@ const CLASSES: [ClassId; 7] = [
     ClassId::Nemesis,
 ];
 
-/// ランダムなデッキ（クラスとニュートラルのトークン以外のカードから 40 枚）
+/// ランダムなデッキ（クラスとニュートラルのスターターのカードから 40 枚）
 fn random_deck(g: u32, i: u32) -> Vec<CardIdx> {
     let cls = CLASSES[((g + i * 3) % 7) as usize];
     let pool: Vec<CardIdx> = data()
         .cards
         .iter()
         .enumerate()
-        .filter(|(_, c)| !c.token && (c.class == cls || c.class == ClassId::Neutral))
+        .filter(|(_, c)| c.starter && (c.class == cls || c.class == ClassId::Neutral))
         .map(|(i, _)| i as CardIdx)
         .collect();
     let mut pick = Chooser::new((g * 2 + i + 1).wrapping_mul(40503));
