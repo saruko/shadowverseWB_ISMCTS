@@ -253,7 +253,7 @@ describe("第5弾", () => {
     expect([1, 2, 4]).toContain(used);
   });
 
-  it("廻る《運命の輪》・スロースのクレスト: （2）で持ち主の場のフォロワーすべて-2/-2。カウントダウン3で、働くのはターン開始2回", () => {
+  it("廻る《運命の輪》・スロースのクレスト: （2）で持ち主の場のフォロワーすべて-2/-2。カウントダウン3で、ターン開始時に3回働く", () => {
     const { s, me, opp } = setup();
     toBoard(s, me, "廻る《運命の輪》・スロース", { evolve: "evolved" });
     let t = endTurn(s); // 相手のターン（1回目）: 1つ働く
@@ -267,7 +267,13 @@ describe("第5弾", () => {
     expect(follower(t, f.iid)?.attack).toBe(3);
     expect(follower(t, f.iid)?.defense).toBe(2);
     expect(t.players[opp].crests[0]?.countdown).toBe(1);
-    t = endTurn(endTurn(t)); // 相手のターン（3回目）: カウントダウンが0になって先に無くなる
+    t = endTurn(t);
+    // 3回目も働くか確かめるため、残りをまた（2）だけにする
+    (t.players[opp].crests[0] as unknown as { usedOptions: number }).usedOptions = 0b101;
+    const g = toBoard(t, opp, F); // 5/4
+    t = endTurn(t); // 相手のターン（3回目）: 能力が働いてから、カウントダウンが0になって無くなる（docs/rules.md 11章）
+    expect(follower(t, g.iid)?.attack).toBe(3);
+    expect(follower(t, g.iid)?.defense).toBe(2);
     expect(t.players[opp].crests).toHaveLength(0);
   });
 

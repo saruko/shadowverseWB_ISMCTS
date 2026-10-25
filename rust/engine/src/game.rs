@@ -122,27 +122,9 @@ fn start_turn(s: &mut GameState, p: PlayerIndex) {
         h.fused_this_turn = false;
     }
 
-    // カウントダウン（アミュレット・クレスト）
-    let mut amulets: Vec<(i32, Iid)> = s.players[p]
-        .board
-        .iter()
-        .map(|c| (c.order, c.iid))
-        .collect();
-    amulets.sort_by_key(|x| x.0);
-    for (_, iid) in amulets {
-        let Some(c) = s.board_card_mut(iid) else {
-            continue;
-        };
-        if c.is_follower {
-            continue;
-        }
-        if let Some(cd) = c.countdown {
-            c.countdown = Some(cd - 1);
-            if cd - 1 <= 0 {
-                leave_board(s, iid, LeaveReason::Destroy);
-            }
-        }
-    }
+    // (2) クレストの「自分のターン開始時」の能力とクレストのカウントダウン（同じタイミング。docs/rules.md 11章）。
+    // カウントが0になるクレストの能力も働くよう、能力を先に誘発待ちに入れてからカウントを進める
+    fire_turn_start_parts(s, true, false);
     let mut crests: Vec<(i32, Iid)> = s.players[p]
         .crests
         .iter()
@@ -159,8 +141,9 @@ fn start_turn(s: &mut GameState, p: PlayerIndex) {
         if cd - 1 > 0 {
             continue;
         }
-        let crest = c.crest;
+        let (crest, cycle, used) = (c.crest, c.cycle, c.used_options);
         s.players[p].crests.make_mut().remove(ci);
+        keep_source_options(s, iid, cycle, used);
         for a in crest_abilities_of(crest) {
             if a.trigger.on() == On::LastWords {
                 s.queue.push_back(Queued {
@@ -170,7 +153,30 @@ fn start_turn(s: &mut GameState, p: PlayerIndex) {
             }
         }
     }
-    fire_turn_start(s);
+    // (3) 場のカードの「自分のターン開始時」の能力とアミュレットのカウントダウン（同じタイミング）
+    fire_turn_start_parts(s, false, true);
+    let mut amulets: Vec<(i32, Iid)> = s.players[p]
+        .board
+        .iter()
+        .map(|c| (c.order, c.iid))
+        .collect();
+    amulets.sort_by_key(|x| x.0);
+    for (_, iid) in amulets {
+        let Some(c) = s.board_card_mut(iid) else {
+            continue;
+        };
+        if c.is_follower {
+            continue;
+        }
+        if let Some(cd) = c.countdown {
+            c.countdown = Some(cd - 1);
+            if cd - 1 <= 0 {
+                let (cycle, used) = (c.ext.cycle, c.ext.used_options);
+                keep_source_options(s, iid, cycle, used);
+                leave_board(s, iid, LeaveReason::Destroy);
+            }
+        }
+    }
 }
 
 /// ターン終了時に切れる一時的な効果を消す
@@ -421,8 +427,8 @@ fn spell_has_targets(
             .filter(|a| a.trigger.on() == On::Spell)
             .flat_map(|a| a.effects.iter())
             .filter_map(|e| {
-                if let Effect::Choose { from, .. } = e {
-                    Some(from)
+                if let Effect::Choose { from, count, .. } = e {
+                    Some((from, *count))
                 } else {
                     None
                 }
@@ -456,7 +462,9 @@ fn spell_has_targets(
         ctx.ext.source_card = Some(cid);
         ctx.ext.source_cost = Some(hand_cost(&removed));
     }
-    let mut ok = chooses().all(|from| !choose_candidates(t, &ctx, from).is_empty());
+    // 「選ぶ」の指定枚数を選べないとプレイできない（docs/rules.md 11章）
+    let mut ok =
+        chooses().all(|(from, n)| choose_candidates(t, &ctx, from).len() >= n.max(1) as usize);
     if ok && nested {
         ok = spell_effects().all(|e| branch_chooses_ok(t, &ctx, e));
     }
@@ -478,7 +486,9 @@ fn branch_chooses_ok(s: &GameState, ctx: &Ctx, effects: &[Effect]) -> bool {
                 otherwise.as_deref().unwrap_or(&[])
             };
             branch.iter().all(|x| match x {
-                Effect::Choose { from, .. } => !choose_candidates(s, ctx, from).is_empty(),
+                Effect::Choose { from, count, .. } => {
+                    choose_candidates(s, ctx, from).len() >= (*count).max(1) as usize
+                }
                 _ => true,
             }) && branch_chooses_ok(s, ctx, branch)
         }

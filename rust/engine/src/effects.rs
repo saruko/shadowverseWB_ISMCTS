@@ -733,12 +733,23 @@ type Matched = Option<Option<Iid>>;
 fn fire_side(
     s: &mut GameState,
     p: PlayerIndex,
+    matcher: impl FnMut(&GameState, &Trigger, Iid) -> Matched,
+) {
+    fire_side_parts(s, p, true, true, matcher);
+}
+
+/// fire_side のうち、クレスト（crests）と、場・信仰・手札・デッキ（rest）のどちらを見るか選べるもの（ターン開始時の処理順用）
+fn fire_side_parts(
+    s: &mut GameState,
+    p: PlayerIndex,
+    crests: bool,
+    rest: bool,
     mut matcher: impl FnMut(&GameState, &Trigger, Iid) -> Matched,
 ) {
     let turn_id = s.players[p].turn_count;
     // 誘発の判定は状態を変えないので、クレストと場をそれぞれ並べ替えた順に見ていく
     let crest_perm = order_perm(s.players[p].crests.iter().map(|c| c.order));
-    let n_crests = s.players[p].crests.len();
+    let n_crests = if crests { s.players[p].crests.len() } else { 0 };
     for k in 0..n_crests {
         let ci = crest_perm.as_ref().map(|v| v[k]).unwrap_or(k);
         let (iid, crest_idx) = {
@@ -762,6 +773,9 @@ fn fire_side(
             ctx.event = event;
             queue(s, ability, ctx);
         }
+    }
+    if !rest {
+        return;
     }
     let board_perm = order_perm(s.players[p].board.iter().map(|c| c.order));
     let n_board = s.players[p].board.len();
@@ -1363,8 +1377,10 @@ fn remove_crest(s: &mut GameState, iid: Iid, destroy: bool) {
     }
 }
 
-/// 能力の元（場のカード・クレスト）の「順に1つ」「働いていないランダム1つ」の状態
-fn source_options(s: &mut GameState, iid: Iid) -> Option<(&mut u8, &mut u16)> {
+/// 能力の元（場のカード・クレスト）の「順に1つ」「働いていないランダム1つ」の状態。
+/// 元が無くなっていれば、無くなったときに文脈へ写したもの
+fn source_options<'a>(s: &'a mut GameState, ctx: &'a mut Ctx) -> Option<(&'a mut u8, &'a mut u16)> {
+    let iid = ctx.source;
     if let Some((q, i)) = s.find_board(iid) {
         let b = &mut s.players[q].board.make_mut()[i];
         return Some((&mut b.ext.cycle, &mut b.ext.used_options));
@@ -1373,7 +1389,19 @@ fn source_options(s: &mut GameState, iid: Iid) -> Option<(&mut u8, &mut u16)> {
         let c = &mut s.players[q].crests.make_mut()[i];
         return Some((&mut c.cycle, &mut c.used_options));
     }
-    None
+    ctx.ext.source_options.as_mut().map(|(c, u)| (c, u))
+}
+
+/// 誘発待ちのうち元が iid の能力に、「順に1つ」「働いていないもの」の状態を写す（元が先に無くなっても分かるように）
+pub fn keep_source_options(s: &mut GameState, iid: Iid, cycle: u8, used: u16) {
+    if cycle == 0 && used == 0 {
+        return;
+    }
+    for q in s.queue.iter_mut() {
+        if q.ctx.source == iid {
+            q.ctx.ext.source_options = Some((cycle, used));
+        }
+    }
 }
 
 /// copy・transform の元のカードを count 枚（kinds なら違う種類）選ぶ
@@ -1532,9 +1560,10 @@ fn record_slot_cards(s: &GameState, ctx: &mut Ctx, ids: &[Iid]) {
 
 // ---- 誘発のきっかけ ----
 
-pub fn fire_turn_start(s: &mut GameState) {
+/// 「自分のターン開始時」の能力を誘発させる（crests: クレスト、rest: 場・信仰・手札・デッキ。docs/rules.md 11章の処理順）
+pub fn fire_turn_start_parts(s: &mut GameState, crests: bool, rest: bool) {
     let p = s.active;
-    fire_side(s, p, |_, t, _| {
+    fire_side_parts(s, p, crests, rest, |_, t, _| {
         if matches!(t, Trigger::TurnStart) {
             Some(None)
         } else {
@@ -2485,9 +2514,10 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
             count,
             unused,
         } => {
-            let src = frame.ctx.source;
             let used = if *unused {
-                source_options(s, src).map(|(_, u)| *u).unwrap_or(0)
+                source_options(s, &mut frame.ctx)
+                    .map(|(_, u)| *u)
+                    .unwrap_or(0)
             } else {
                 0
             };
@@ -2498,7 +2528,7 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
             idx.truncate((*count).max(0) as usize);
             idx.sort_unstable();
             if *unused {
-                if let Some((_, u)) = source_options(s, src) {
+                if let Some((_, u)) = source_options(s, &mut frame.ctx) {
                     for &i in &idx {
                         *u |= 1 << i;
                     }
@@ -2514,7 +2544,7 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
                 frame.pc += 1;
                 return true;
             }
-            let k = match source_options(s, frame.ctx.source) {
+            let k = match source_options(s, &mut frame.ctx) {
                 Some((c, _)) => {
                     let k = *c as usize % options.len();
                     *c = ((k + 1) % options.len()) as u8;

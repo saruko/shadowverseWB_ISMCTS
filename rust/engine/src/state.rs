@@ -394,6 +394,8 @@ pub struct CtxExt {
     pub event_card: Option<CardIdx>,
     /// スロットに入れたカード（iid, カード, 持ち主）。場・手札を離れても選んだカードが分かるように
     pub slot_cards: Vec<(Iid, CardIdx, PlayerIndex)>,
+    /// 能力の元が無くなったときの「順に1つ」「働いていないもの」の状態（カウントダウンで失ったクレスト・アミュレット）
+    pub source_options: Option<(u8, u16)>,
 }
 
 impl Ctx {

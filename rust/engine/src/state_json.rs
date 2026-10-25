@@ -530,6 +530,12 @@ fn ctx_json(c: &Ctx) -> Json {
                                 .collect(),
                         ),
                     ),
+                    (
+                        "sourceOptions",
+                        e.source_options
+                            .map(|(c, u)| Json::Arr(vec![num(c as i32), num(u as i32)]))
+                            .unwrap_or(Json::Null),
+                    ),
                 ]),
             ));
         }
@@ -1178,6 +1184,14 @@ fn ctx_of(v: &Json) -> R<Ctx> {
                         _ => Err("\"slotCards\" は [iid, カードID, 持ち主] の配列".to_string()),
                     })
                     .collect::<R<Vec<_>>>()?,
+                source_options: match e.get("sourceOptions") {
+                    None | Some(Json::Null) => None,
+                    Some(Json::Arr(xs)) if xs.len() == 2 => Some((
+                        int_of("sourceOptions", &xs[0])? as u8,
+                        int_of("sourceOptions", &xs[1])? as u16,
+                    )),
+                    _ => return Err("\"sourceOptions\" は [順の位置, 働いた印] の配列".to_string()),
+                },
             },
         },
     })
