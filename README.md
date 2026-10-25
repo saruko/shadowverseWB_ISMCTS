@@ -1,93 +1,94 @@
-# Shadowverse: Worlds Beyond Simulator
+# shadowverseWB_ISMCTS
 
-シャドウバース ワールズビヨンド（Shadowverse: Worlds Beyond）の対戦シミュレータです。
-ブラウザだけで動作します（サーバーなし）。このリポジトリでは GitHub Pages には公開しません。
+シャドウバース ワールズビヨンド（Shadowverse: Worlds Beyond）の対戦シミュレータと、その上で育てる対戦 AI です。
+ローテーションのカードをすべて実装したルールエンジン（Rust）と、相手の手札を何通りも仮定して読む探索 AI、自己対戦で学んだ評価の補正を持ちます。
+
+[wistery-k/Shadowverse-Wb-Sim](https://github.com/wistery-k/Shadowverse-Wb-Sim)（スターター向けのシミュレータ）を元にした改造版です。
 
 > **非公式ファンプロジェクト**です。Cygames 社および関連企業とは一切関係ありません。
 > ゲーム名・カード名・カードテキストの権利は各権利者に帰属します。
 > 本リポジトリは画像・音源などのアセットを一切含みません。
 
-## 目標
+## できること
 
-| フェーズ | 内容 | 状況 |
-| --- | --- | --- |
-| 1 | ルールエンジン（対戦ロジック）とカードデータ | 全カード・クレストの能力を実装済み（一部の処理順は未確認） |
-| 2 | プレイヤー vs AI（ブラウザ上でプレイ可能） | 貪欲法の AI と対戦可能。デッキ構築（ブラウザに保存・テキストでエクスポート/インポート）対応 |
-| 3 | AI vs AI（自動対戦・勝率集計・AI強さ比較） | 総当たりの自動対戦と勝率表（ブラウザの「AI対戦」タブ・`npm run sim`）。勝率表のセルから各試合のリプレイを再生できる。リプレイの「打ち比べ」で、ある局面の実戦の手と別の手を、続きを AI に打たせた勝率で比べられる（手番のプレイヤーから見えない手札・山札は試合ごとに並べ直し、同じ番号の試合はどの手でも同じ並べ直しにする）。リプレイの「AI の考え」で、その局面で手番の探索 AI が比べた手（最初の手ごとの並び）と、ターン末・相手のターンを読んだ後の点数の内訳（手で作った評価と学習した補正）を表示できる。探索 AI（貪欲法に約7割勝つ）。「人間との比較」タブで、`npm run rhino-compare`（リノセウスエルフ）・`npm run af-compare`（AFネメシス）・`npm run spellwitch-compare`（スペルウィッチ）・`npm run bishop-compare`（アミュレット疾走ビショップ）・`npm run dragon-compare`（疾走ドラゴン）・`npm run nightmare-compare`（ミッドレンジナイトメア）・`npm run royal-compare`（アマリアロイヤル）と同じシードの試合を人間がそのデッキで打ち、勝敗と各ターンの選択を JSON Lines で保存できる。相手の AI は物差し（`docs/yardstick.md`）か最新版（今の既定の探索 AI）から選べる。このタブの対戦では、自分のターンのリーサルの有無を表示し、ボタンで自動で取れる（`npm run rhino-compare -- --matches <ファイル>`、`npm run af-compare -- --matches <ファイル>`、`npm run spellwitch-compare -- --matches <ファイル>` 等で同じ試合の AI の勝敗と並べる）。「サンドボックス」タブで、手札・場・山札・リーダー・ターンを編集した局面（新しく作るか、リプレイの「サンドボックスで開く」で開く）について、「AI の考え」と打ち比べ（選んだ手どうしを比べる）を使い、打てる手や AI の手で進められる（編集と手は履歴に残り、戻せる。局面は JSON で書き出し・読み込みできる） |
+- **ルールエンジン**: スターター（第1弾＋ベーシック）と、ローテーション（ベーシック＋直近6パック）の全カード・トークン・クレストの能力。
+  ルールの仕様と出典は [`docs/rules.md`](docs/rules.md)。決定的（シード付き乱数）で、決まった試合の結果をゴールデンテストで固定している
+- **AI**:
+  - 探索 AI: 相手の手札を何通りも引き直して、自分のターン末までのビームサーチと、相手のターンの読みで手を選ぶ。手で作った評価関数に、自己対戦の TD 学習で作った補正（小さなニューラルネットワーク）を足して点数にする
+  - 貪欲法（1 手読み）・ランダム
+- **自動対戦**: デッキ × AI の総当たりと勝率表（`npm run sim`）、AI の設定どうしの比較（`svwb compare`）、自己対戦の書き出しと補正の学習（`svwb td selfplay`・`npm run td`）
+- **ブラウザの画面**: 人間 vs AI の対戦、デッキ構築、AI 対戦の勝率表とリプレイ、局面を編集して AI の考えを見るサンドボックス（サーバーなし。AI もブラウザの中で動く）
+- **デッキ**: スターターのデッキ（`data/decks`）と、ローテーションの環境デッキ 14 個（`data/decks-rotation`。プロリーグの公開デッキリストと攻略サイトの Tier 表から選んだ。出典は各ファイルの先頭）
 
-## 対象範囲
+## 状況（2026-10-25）
 
-- **フォーマット**: スターター、ローテーション（第4〜9弾＋ベーシックの全カードの能力を定義済み。UI のデッキ構築はまだスターターのみ）
-- **カードプール**: 第1弾「伝説の幕開け」＋ベーシック。ローテーション用に、今のローテーションのカードもデータに含む
-- **アセット**: 画像・音源・外部フォントなどは使用しない。UI は HTML/CSS とテキストのみで構成する
-- **サーバー**: なし（静的ファイルのみ。AI の思考もブラウザ内で完結）
+| 項目 | 状況 |
+| --- | --- |
+| ルールエンジン | スターター・ローテーションとも全カード実装済み（第9弾まで） |
+| 探索 AI（スターター） | 貪欲法に約 7 割、補正なしの探索 AI に 5 割強勝つ。実験の記録は [`docs/ai-notes.md`](docs/ai-notes.md) |
+| 探索 AI（ローテーション） | 補正にローテーションのカードを足した段階（属性から埋めた重み）。自己対戦での学び直しはこれから |
+| ブラウザの画面 | スターターのデッキで対戦・AI 対戦。ローテーションのデッキはまだ画面に出ない |
 
-## 技術スタック
-
-- TypeScript（strict）＋ Vite
-- エンジン・AI: Rust（ブラウザでは WASM にして使う。`rust/README.md`）
-- UI: 軽量ライブラリ（Preact 想定）＋ CSS のみ
-- テスト: Vitest
-- AI: ルールベース → MCTS（Web Worker 上で実行）
-- 配備: なし（このリポジトリでは GitHub Pages に公開しない。2026-10-25 にデプロイのワークフローを外した）
-
-## ディレクトリ構成（予定）
-
-```
-rust/
-  engine/   ルールエンジンと AI（UI非依存・決定的・シード付き乱数）。自己対戦の CLI（svwb）
-  wasm/     ブラウザ・Node から呼ぶ WASM
-src/
-  engine/   局面の型・能力の DSL と、WASM のエンジンを呼ぶ関数
-  cards/    カード定義（data/cards.json からの読み込みと検証）・能力の定義
-  ai/       選べる AI の一覧と、AI の思考を行う Web Worker
-  ui/       ブラウザ UI
-  sim/      AI vs AI の自動対戦ランナー（Node / Worker）
-data/
-  cards.json  カードデータ（scripts/convert-cards.ts で生成）
-  crests.json クレスト（同上）
-  starter-overrides.json  当時の能力への手動上書き（通常は空）
-  decks/      デフォルトデッキ（アプリのエクスポート形式の .txt。data/decks/README.md 参照）
-  raw/        公式カード一覧APIのレスポンス（コミットしない）
-docs/
-  rules.md    実装するルールの仕様メモ（出典付き）
-  ai-notes.md AI の実験記録（試したこと・結果・採否）
-tests/
-scripts/
-  convert-cards.ts  カードデータ変換
-```
-
-## 開発
+## 動かし方
 
 Node と Rust（cargo）が要ります。WASM 向けのターゲットを入れておきます（`rustup target add wasm32-unknown-unknown`）。
 `npm test`・`npm run dev`・`npm run build` は先にエンジンの WASM を作ります（`npm run wasm`）。
 
 ```sh
 npm install
-npm run dev        # 開発サーバー
+npm run dev        # 開発サーバー（ブラウザの画面）
 npm test           # テスト
 npm run typecheck  # 型チェック
 npm run build      # 本番ビルド（dist/）
 npm run fetch-cards # 公式カード一覧APIのレスポンスを data/raw/ に取得（全カード。1 秒ずつ待って取る）
-npm run cards      # data/raw/*.json（公式カード一覧APIのレスポンス）から data/cards.json・crests.json を生成
+npm run cards      # data/raw/*.json から data/cards.json・crests.json を生成
 npm run sim        # デフォルトデッキの AI 同士の総当たり（例: npm run sim -- --games 50 --agents greedy,random。ローテーションのデッキは --format rotation）
 npm run compare    # 探索 AI の設定同士の比較（例: npm run compare -- 105 '{}' '{"lethal":false}'）
                    # sim と compare は試合を CPU のコア数だけ並列に行う（並列数は環境変数 THREADS で指定）
 npm run sim-report # sim の --json の結果（--shard で分けたものも）を Markdown の表にまとめる
 npm run game       # 1試合だけ行い、行動の列を表示する（リプレイ画面の「再現に必要な情報」のコマンド）
-npm run svwb       # Rust 版の CLI（ゴールデンテスト・計測・自己対戦。rust/README.md）
-npm run pack-run   # PC で回した 1 回分の出力（自己対戦・モデル・ログ）を、共有フォルダに上げる .tar.gz にまとめる
+npm run svwb       # Rust 版の CLI（ゴールデンテスト・計測・自己対戦・比較。rust/README.md）
+npm run td         # 評価の補正の学習（自己対戦は svwb td selfplay）
+npm run pack-run   # 1 回分の出力（自己対戦・モデル・ログ）を、共有フォルダに上げる .tar.gz にまとめる
 ```
 
-各コマンドが受け付ける引数の一覧は [`docs/commands.md`](docs/commands.md) にまとめてあります。
+各コマンドが受け付ける引数の一覧は [`docs/commands.md`](docs/commands.md) にあります。
+ローテーションのデッキで補正を学び直す一連の手順は `bash scripts/rotation-retrain.sh <作業フォルダ>`（中身はファイルの先頭）です。
 
-## 公開
+## ディレクトリ構成
 
-このリポジトリでは GitHub Pages に公開しません（元のリポジトリから引き継いだデプロイのワークフローは 2026-10-25 に外しました）。
-公開するなら、ワークフローを戻し、Settings → Pages の Source を「GitHub Actions」にして、Vite の `base`（今は元のリポジトリ名の `/Shadowverse-Wb-Sim/`）をこのリポジトリ名に変えます。
+```
+rust/
+  engine/   ルールエンジンと AI（UI 非依存・決定的・シード付き乱数）。自己対戦・比較の CLI（svwb）
+  wasm/     ブラウザ・Node から呼ぶ WASM
+src/
+  engine/   局面の型・能力の DSL と、WASM のエンジンを呼ぶ関数
+  cards/    カード定義（data/cards.json からの読み込みと検証）・能力の定義（rotation/ がローテーションのカード）
+  ai/       選べる AI の一覧と、AI の思考を行う Web Worker
+  ui/       ブラウザ UI
+  sim/      AI vs AI の自動対戦ランナー
+data/
+  cards.json・crests.json  カードデータ（scripts/convert-cards.ts で生成）
+  decks/           スターターのデッキ（data/decks/README.md）
+  decks-rotation/  ローテーションのデッキ（data/decks-rotation/README.md）
+  value-net.json   学習した評価の補正（スターター）
+  raw/             公式カード一覧APIのレスポンス（コミットしない）
+docs/
+  rules.md          実装するルールの仕様メモ（出典付き）
+  ai-notes.md       AI の実験記録（試したこと・結果・採否）
+  commands.md       コマンドと引数の一覧
+  rotation-authoring.md  ローテーションのカードの能力の書き方
+tests/
+scripts/
+```
 
-また `main` への push ごとに「自動対戦」ワークフロー（`.github/workflows/auto-match.yml`）が、探索 AI どうし（リノセウスエルフだけリノセウス用 AI）でデフォルトデッキの総当たり（1組 20 試合、8 並列）を回し、通算勝率と対戦表を Actions の実行結果のサマリーに出します。Actions タブの Run workflow から試合数と AI を変えて手動でも実行できます。
+## CI
+
+`main` を含むすべての push と PR で、`.github/workflows/ci.yml` が TypeScript の型チェック・テスト・ビルドと、Rust の書式・lint・テスト（ゴールデンテストを含む）を回します。
+`main` への push ごとに「自動対戦」ワークフロー（`.github/workflows/auto-match.yml`）が、探索 AI どうしでデフォルトデッキの総当たりを回し、勝率表を Actions の実行結果のサマリーに出します。
+
+GitHub Pages には公開しません。
 
 ## ライセンス
 
-未定。カードデータの取り扱いが確定してから決定します。
+未定です。元のリポジトリにもライセンスの記載がなく、カードデータの取り扱いが確定してから決めます。
