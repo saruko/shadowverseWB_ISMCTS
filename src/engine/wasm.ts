@@ -31,9 +31,10 @@ let loading: Promise<void> | null = null;
 const nodeProcess = (globalThis as { process?: NodeJS.Process }).process;
 const isNode = typeof nodeProcess?.versions?.node === "string";
 
-function instantiate(module: WebAssembly.Module): void {
+// ブラウザのメインスレッドでは 8MB を超える WASM を同期で Instance にできないので、最初の読み込みは非同期の instance を渡す
+function instantiate(module: WebAssembly.Module, instance = new WebAssembly.Instance(module, {})): void {
   compiled = module;
-  wasm = new WebAssembly.Instance(module, {}).exports as unknown as Exports;
+  wasm = instance.exports as unknown as Exports;
   generation++;
 }
 
@@ -51,7 +52,9 @@ export function initEngine(): Promise<void> {
     loadSync();
     return Promise.resolve();
   }
-  loading ??= compileFrom(new URL("./svwb.wasm", import.meta.url)).then(instantiate);
+  loading ??= compileFrom(new URL("./svwb.wasm", import.meta.url)).then(async (module) =>
+    instantiate(module, await WebAssembly.instantiate(module, {})),
+  );
   return loading;
 }
 
