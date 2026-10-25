@@ -70,7 +70,7 @@ npm run typecheck  # 型チェック
 npm run build      # 本番ビルド（dist/）
 npm run fetch-cards # 公式カード一覧APIのレスポンスを data/raw/ に取得（全カード。1 秒ずつ待って取る）
 npm run cards      # data/raw/*.json（公式カード一覧APIのレスポンス）から data/cards.json・crests.json を生成
-npm run sim        # デフォルトデッキの AI 同士の総当たり（例: npm run sim -- --games 50 --agents greedy,random）
+npm run sim        # デフォルトデッキの AI 同士の総当たり（例: npm run sim -- --games 50 --agents greedy,random。ローテーションのデッキは --format rotation）
 npm run compare    # 探索 AI の設定同士の比較（例: npm run compare -- 105 '{}' '{"lethal":false}'）
                    # sim と compare は試合を CPU のコア数だけ並列に行う（並列数は環境変数 THREADS で指定）
 npm run sim-report # sim の --json の結果（--shard で分けたものも）を Markdown の表にまとめる

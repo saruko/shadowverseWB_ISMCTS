@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { STARTER, deckProblems } from "../src/cards";
+import { ROTATION, STARTER, deckProblems } from "../src/cards";
 import { CARDS_BY_ID } from "../src/cards";
 import { deckToText, parseDeckText } from "../src/cards/deck";
-import { DEFAULT_DECKS, DEFAULT_DECK_ERRORS } from "../src/cards/defaultDecks";
+import { DEFAULT_DECKS, DEFAULT_DECK_ERRORS, ROTATION_DECKS, ROTATION_DECK_ERRORS } from "../src/cards/defaultDecks";
 import { rngFrom } from "../src/engine";
 import { randomDeck } from "../src/sim/decks";
 
@@ -43,6 +43,17 @@ describe("デフォルトデッキ（data/decks）", () => {
     for (const deck of DEFAULT_DECKS) {
       const cards = deck.cards.map((id) => CARDS_BY_ID.get(id)!);
       expect({ deck: deck.key, problems: deckProblems(STARTER, deck.class, cards) }).toEqual({ deck: deck.key, problems: [] });
+    }
+  });
+});
+
+describe("ローテーションのデッキ（data/decks-rotation）", () => {
+  it("すべて読み込め、ローテーションの構築ルールを満たす", () => {
+    expect(ROTATION_DECK_ERRORS).toEqual([]);
+    expect(ROTATION_DECKS.length).toBeGreaterThan(0);
+    for (const deck of ROTATION_DECKS) {
+      const cards = deck.cards.map((id) => CARDS_BY_ID.get(id)!);
+      expect({ deck: deck.key, problems: deckProblems(ROTATION, deck.class, cards) }).toEqual({ deck: deck.key, problems: [] });
     }
   });
 });

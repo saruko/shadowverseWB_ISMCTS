@@ -40,7 +40,7 @@
 ## sim
 
 ```sh
-npm run sim -- [--games 20] [--seed 1] [--agents greedy] [--decks all] [--mirror] [--deck-agent <デッキ>=<AI>] [--json 結果.json] [--shard i/n]
+npm run sim -- [--games 20] [--seed 1] [--agents greedy] [--decks all] [--format starter] [--mirror] [--deck-agent <デッキ>=<AI>] [--json 結果.json] [--shard i/n]
 ```
 
 | 引数 | 既定 | 意味 |
@@ -48,7 +48,8 @@ npm run sim -- [--games 20] [--seed 1] [--agents greedy] [--decks all] [--mirror
 | `--games N` | 20 | 1 組（参加者 2 人の組み合わせ）あたりの試合数 |
 | `--seed S` | 1 | 試合のシードの基準 |
 | `--agents a,b,…` | `greedy` | 使う AI（カンマ区切り）。2 つ以上なら「デッキ × AI」が参加者になり、名前は `デッキ(AI)` |
-| `--decks all` か `d1,d2,…` | `all` | 使うデッキ（`all` は 8 デッキ全部） |
+| `--decks all` か `d1,d2,…` | `all` | 使うデッキ（`all` はそのフォーマットのデッキ全部。スターターは 8 デッキ） |
+| `--format starter` か `rotation` | `starter` | デッキを選ぶフォーマット（`starter` は `data/decks`、`rotation` は `data/decks-rotation` の 14 デッキ） |
 | `--mirror` | なし | 同じ参加者どうしの試合も行う |
 | `--deck-agent デッキ=AI` | なし | そのデッキだけ AI を変える（何回でも書ける。`--agents` が 1 つのときだけ） |
 | `--json ファイル` | なし | 全試合の記録と集計を JSON に書き出す（`sim-report` に渡せる） |
@@ -57,6 +58,8 @@ npm run sim -- [--games 20] [--seed 1] [--agents greedy] [--decks all] [--mirror
 試合数は「参加者の組の数 × `--games`」。8 デッキ・AI 1 つなら 28 組なので、`--games 50` で 1400 試合。
 
 例: `npm run sim -- --games 50 --agents search --deck-agent リノセウスエルフ=rhino`
+
+ローテーションのデッキどうし: `npm run sim -- --format rotation --games 10`（14 デッキで 91 組）
 
 ## sim-report
 
