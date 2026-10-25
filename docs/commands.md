@@ -246,6 +246,8 @@ npm run td -- probe --model m1.json --data d0.jsonl [--per 2000]
 
 自己対戦（`selfplay`）は Rust 版（`npm run svwb -- td selfplay`）で行う。各引数の意味は `scripts/td-main.ts` の先頭。
 
+ローテーションのデッキで学び直す一連の手順（m0 を作る・自己対戦・学習・判定・マリガンの比べ）は `bash scripts/rotation-retrain.sh <作業フォルダ> [段階 …]`（段階と数の変え方はファイルの先頭）。
+
 ## pack-run（PC で回した結果をクラウドから見られるようにする）
 
 ```sh
