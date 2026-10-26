@@ -1,28 +1,30 @@
-// デッキ一覧（保存したデッキ・デフォルトデッキ）と、新規作成・インポート
+// デッキ一覧（保存したデッキ・デフォルトデッキ）と、新規作成・インポート。デフォルトデッキとデッキ構築は画面で選んだフォーマットのもの
 
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import { CARDS_BY_ID, CLASS_NAMES, STARTER, deckProblems, type Card } from "../cards";
+import { CLASS_NAMES } from "../cards";
 import { DECK_CLASSES, deckToText, parseDeckText, type Deck, type DeckClass } from "../cards/deck";
-import { DEFAULT_DECKS } from "../cards/defaultDecks";
 import { DeckBuilder } from "./DeckBuilder";
 import { ExportBox } from "./ExportBox";
+import { defaultDeckChoice, formatDecks, FORMATS, isPlayableIn, type FormatId } from "./format";
 import { newDeckId, type SavedDeck } from "./storage";
 
 interface Props {
   decks: readonly SavedDeck[];
+  format: FormatId;
   onChange: (decks: SavedDeck[]) => void;
 }
 
-/** デッキが対戦に使えるか */
-export function isPlayable(deck: Deck): boolean {
-  const cards = deck.cards.map((id) => CARDS_BY_ID.get(id)).filter((c): c is Card => c !== undefined);
-  return cards.length === deck.cards.length && deckProblems(STARTER, deck.class, cards).length === 0;
+/** 今のフォーマットで使えないデッキに付ける説明（もう一方のフォーマットで使えるならそれを書く） */
+function unplayableNote(format: FormatId, deck: Deck): string {
+  if (isPlayableIn(format, deck)) return "";
+  const other: FormatId = format === "starter" ? "rotation" : "starter";
+  return isPlayableIn(other, deck) ? `（${FORMATS[other].name}用）` : "（未完成）";
 }
 
 type Editing = { id: string | null; deck: Deck };
 
-export function Decks({ decks, onChange }: Props) {
+export function Decks({ decks, format, onChange }: Props) {
   const [editing, setEditing] = useState<Editing | null>(null);
   const [newClass, setNewClass] = useState<DeckClass>("elf");
   const [importText, setImportText] = useState("");
@@ -33,6 +35,7 @@ export function Decks({ decks, onChange }: Props) {
     return (
       <DeckBuilder
         initial={editing.deck}
+        format={format}
         onCancel={() => setEditing(null)}
         onSave={(deck) => {
           const saved: SavedDeck = { ...deck, id: editing.id ?? newDeckId(), updatedAt: Date.now() };
@@ -57,7 +60,7 @@ export function Decks({ decks, onChange }: Props) {
       <div class="deck-row-main">
         <strong>{deck.name}</strong>
         <span class="muted">
-          {CLASS_NAMES[deck.class]} / {deck.cards.length}枚{isPlayable(deck) ? "" : "（未完成）"}
+          {CLASS_NAMES[deck.class]} / {deck.cards.length}枚{unplayableNote(format, deck)}
         </span>
       </div>
       <div class="row-buttons">{buttons}</div>
@@ -128,19 +131,19 @@ export function Decks({ decks, onChange }: Props) {
         )}
       </section>
 
-      {DEFAULT_DECKS.length > 0 && (
+      {formatDecks(format).length > 0 && (
         <section class="panel">
-          <h2>デフォルトデッキ</h2>
+          <h2>デフォルトデッキ（{FORMATS[format].name}）</h2>
           <ul class="deck-list">
-            {DEFAULT_DECKS.map((d) =>
+            {formatDecks(format).map((d) =>
               row(
-                `default:${d.key}`,
+                defaultDeckChoice(format, d.key),
                 d,
                 <>
                   <button type="button" onClick={() => setEditing({ id: null, deck: { ...d, name: `${d.name}のコピー` } })}>
                     コピーして編集
                   </button>
-                  {exportButton(`default:${d.key}`)}
+                  {exportButton(defaultDeckChoice(format, d.key))}
                 </>,
               ),
             )}

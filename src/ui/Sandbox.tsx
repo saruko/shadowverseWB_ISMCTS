@@ -32,6 +32,7 @@ import { AiThought, useThoughts } from "./AiThought";
 import { BranchCompare, useBranchRuns } from "./BranchCompare";
 import { CardDetail, CardView, hasSpellboost } from "./CardView";
 import { DeckSelect, resolveDeck, type DeckChoice } from "./DeckSelect";
+import type { FormatId } from "./format";
 import { actionLabels, attackStatuses, crestName, describeAction, KEYWORD_NAMES, leaderClasses, TYPE_NAMES } from "./describe";
 import { BoardSlots, EmptySlots, LeaderHp, PlayerInfo, Resources } from "./Game";
 import type { SavedDeck } from "./storage";
@@ -45,6 +46,8 @@ export interface SandboxIncoming {
 
 interface Props {
   saved: readonly SavedDeck[];
+  /** 新しい局面のデッキを選ぶフォーマット（画面で選んだもの） */
+  format: FormatId;
   incoming: SandboxIncoming | null;
 }
 
@@ -120,7 +123,7 @@ function loadState(): GameState | null {
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const randomSeed = () => Math.floor(Math.random() * 2 ** 32);
 
-export function Sandbox({ saved, incoming }: Props) {
+export function Sandbox({ saved, format, incoming }: Props) {
   const nextId = useRef(1);
   const [history, setHistory] = useState<History>(() => {
     const s = loadState();
@@ -260,7 +263,7 @@ export function Sandbox({ saved, incoming }: Props) {
 
   function create() {
     const rng = rngFrom({ rng: randomSeed() });
-    const decks = options.decks.map((d) => resolveDeck(d, saved, rng));
+    const decks = options.decks.map((d) => resolveDeck(d, saved, rng, format));
     const [d0, d1] = decks;
     if (!d0 || !d1) {
       setError("選んだデッキが見つからないか、未完成です");
@@ -309,6 +312,7 @@ export function Sandbox({ saved, incoming }: Props) {
           <DeckSelect
             value={options.decks[p]}
             saved={saved}
+            format={format}
             onChange={(d) => setOptions({ decks: p === 0 ? [d, options.decks[1]] : [options.decks[0], d] })}
           />
         </label>

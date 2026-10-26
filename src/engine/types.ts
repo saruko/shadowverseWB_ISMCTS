@@ -184,6 +184,11 @@ export interface PlayerState {
   /** 「自分のリーダーが回復したとき」等、リーダーのターンごとに1回の能力の使用記録 */
   leaderOncePerTurn: Record<string, number>;
   mulliganDone: boolean;
+  /**
+   * エンジンが持つ付加情報（既定のままなら省く。rust/engine/src/state_json.rs の player_ext_json）。
+   * TypeScript で読むのは rotation（デッキにスターター以外のカードがある）だけで、ほかの項目はそのまま受け渡す
+   */
+  ext?: { rotation?: boolean };
 }
 
 export type Phase = "mulligan" | "main" | "ended";

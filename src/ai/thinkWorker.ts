@@ -1,6 +1,7 @@
 // 「AI の考え」を UI のスレッドから外すための Web Worker（src/ai/think.ts）
 
 import { initEngine, type GameState } from "../engine";
+import { isRotationState } from "../sim/decks";
 import { think, type Thought } from "./think";
 
 export interface ThinkRequest {
@@ -15,7 +16,7 @@ self.onmessage = async (e: MessageEvent<ThinkRequest>) => {
   const { agent, state, rng } = e.data;
   let response: ThinkResponse;
   try {
-    await initEngine();
+    await initEngine({ rotation: isRotationState(state) });
     response = { type: "thought", thought: think(agent, state, rng) };
   } catch (err) {
     response = { type: "error", message: String(err) };

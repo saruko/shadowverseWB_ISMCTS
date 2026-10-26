@@ -3,6 +3,7 @@
 
 import { initEngine, type Action, type GameState, type PlayerIndex } from "../engine";
 import { branchPlayout, branchSeed, type Outcome } from "./branch";
+import { isRotationState } from "./decks";
 
 export interface BranchRequest {
   state: GameState;
@@ -27,7 +28,7 @@ export type BranchResponse =
 self.onmessage = async (e: MessageEvent<BranchRequest>) => {
   const { state, actions, agents, viewer, seedBase, game, action } = e.data;
   try {
-    await initEngine();
+    await initEngine({ rotation: isRotationState(state) });
     const a = actions[action];
     let outcome: Outcome = null;
     if (a !== undefined) {

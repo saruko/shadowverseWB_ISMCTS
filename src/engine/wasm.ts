@@ -36,17 +36,30 @@ function instantiate(module: WebAssembly.Module, instance = new WebAssembly.Inst
   compiled = module;
   wasm = instance.exports as unknown as Exports;
   generation++;
-  // ローテーションの試合の補正は WASM に埋め込んでいない（大きさのため）ので、Node では読み込むたびに渡す。
-  // ブラウザでは渡していない（ローテーションのデッキを画面に出すときに決める）ので、ローテーションの試合は補正なしで考える
-  if (isNode) callEngine({ f: "setRotationNet", text: rotationNetText() });
+  // ローテーションの試合の補正は WASM に埋め込んでいない（大きさのため）ので、読み込むたびに渡す。
+  // Node はいつも渡し、ブラウザは一度取ってきた後だけ渡す（initEngine({ rotation: true })）。渡していなければローテーションの試合は補正なしで考える
+  if (isNode) rotationNet ??= readRotationNet();
+  if (rotationNet !== null) callEngine({ f: "setRotationNet", text: rotationNet });
 }
 
+/** ローテーションの試合の補正（data/value-net-rotation.json の中身） */
 let rotationNet: string | null = null;
+let rotationLoading: Promise<void> | null = null;
 
-function rotationNetText(): string {
+function readRotationNet(): string {
   const fs = nodeProcess?.getBuiltinModule("node:fs");
   if (!fs) throw new Error("ローテーションの補正を読めません（Node の fs が使えません）");
-  return (rotationNet ??= fs.readFileSync(__SVWB_ROTATION_NET_PATH__, "utf8"));
+  return fs.readFileSync(__SVWB_ROTATION_NET_PATH__, "utf8");
+}
+
+/** ブラウザでローテーションの試合の補正を取ってきて、WASM に渡す（スターターだけなら取ってこない） */
+async function fetchRotationNet(): Promise<void> {
+  const url = new URL("../../data/value-net-rotation.json", import.meta.url);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url.pathname} を読み込めません（${res.status}）`);
+  const text = await res.text();
+  callEngine({ f: "setRotationNet", text });
+  rotationNet = text;
 }
 
 function loadSync(): void {
@@ -56,17 +69,23 @@ function loadSync(): void {
   instantiate(new WebAssembly.Module(fs.readFileSync(__SVWB_WASM_PATH__)));
 }
 
-/** エンジンを使えるようにする（ブラウザでは最初に待つ。Node では待たなくてもよい） */
-export function initEngine(): Promise<void> {
-  if (wasm) return Promise.resolve();
-  if (isNode) {
-    loadSync();
-    return Promise.resolve();
+/**
+ * エンジンを使えるようにする（ブラウザでは最初に待つ。Node では待たなくてもよい）。
+ * ブラウザでローテーションの試合を考えるときは rotation: true で、ローテーションの試合の補正も読み込む（Node はいつも読み込む）
+ */
+export async function initEngine({ rotation = false }: { rotation?: boolean } = {}): Promise<void> {
+  if (!wasm) {
+    if (isNode) loadSync();
+    else
+      await (loading ??= compileFrom(new URL("./svwb.wasm", import.meta.url)).then(async (module) =>
+        instantiate(module, await WebAssembly.instantiate(module, {})),
+      ));
   }
-  loading ??= compileFrom(new URL("./svwb.wasm", import.meta.url)).then(async (module) =>
-    instantiate(module, await WebAssembly.instantiate(module, {})),
-  );
-  return loading;
+  if (rotation && rotationNet === null)
+    await (rotationLoading ??= fetchRotationNet().catch((e: unknown) => {
+      rotationLoading = null;
+      throw e;
+    }));
 }
 
 /** URL の WASM を読み込む（配信の Content-Type が application/wasm でなくても読めるよう、ストリーミングにはしない） */

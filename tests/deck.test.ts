@@ -4,7 +4,7 @@ import { CARDS_BY_ID } from "../src/cards";
 import { deckToText, parseDeckText } from "../src/cards/deck";
 import { DEFAULT_DECKS, DEFAULT_DECK_ERRORS, ROTATION_DECKS, ROTATION_DECK_ERRORS } from "../src/cards/defaultDecks";
 import { rngFrom } from "../src/engine";
-import { randomDeck } from "../src/sim/decks";
+import { isRotationDeck, randomDeck } from "../src/sim/decks";
 
 const sorted = (ids: readonly string[]) => [...ids].sort();
 
@@ -54,6 +54,18 @@ describe("ローテーションのデッキ（data/decks-rotation）", () => {
     for (const deck of ROTATION_DECKS) {
       const cards = deck.cards.map((id) => CARDS_BY_ID.get(id)!);
       expect({ deck: deck.key, problems: deckProblems(ROTATION, deck.class, cards) }).toEqual({ deck: deck.key, problems: [] });
+    }
+  });
+
+  it("ローテーションのデッキはローテーションの補正を使うデッキで、スターターのデッキは使わない（isRotationDeck）", () => {
+    for (const deck of ROTATION_DECKS) expect(isRotationDeck(deck.cards), deck.key).toBe(true);
+    for (const deck of DEFAULT_DECKS) expect(isRotationDeck(deck.cards), deck.key).toBe(false);
+  });
+
+  it("ローテーションのランダムなデッキ（画面の「ランダム」）は、ローテーションの構築ルールを満たす", () => {
+    for (const c of ["elf", "royal", "witch", "dragon", "nightmare", "bishop", "nemesis"] as const) {
+      const cards = randomDeck(c, rngFrom({ rng: 7 }), ROTATION).map((id) => CARDS_BY_ID.get(id)!);
+      expect({ c, problems: deckProblems(ROTATION, c, cards) }).toEqual({ c, problems: [] });
     }
   });
 });

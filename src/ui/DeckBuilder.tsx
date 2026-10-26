@@ -1,14 +1,16 @@
-// デッキ編集画面
+// デッキ編集画面（入れられるカードと規則は、画面で選んだフォーマットのもの）
 
 import { useMemo, useState } from "preact/hooks";
-import { ALL_CARDS, CARDS_BY_ID, CLASS_NAMES, DECK_SIZE, MAX_COPIES, STARTER, deckProblems, type Card } from "../cards";
+import { ALL_CARDS, CARDS_BY_ID, CLASS_NAMES, DECK_SIZE, MAX_COPIES, deckProblems, inFormat, type Card } from "../cards";
 import { compareCards, countCards, deckToText, type Deck } from "../cards/deck";
 import { CardDetail } from "./CardView";
 import { TYPE_NAMES } from "./describe";
 import { ExportBox } from "./ExportBox";
+import { FORMATS, type FormatId } from "./format";
 
 interface Props {
   initial: Deck;
+  format: FormatId;
   onSave: (deck: Deck) => void;
   onCancel: () => void;
 }
@@ -22,7 +24,7 @@ function costMatches(cost: number, filter: (typeof COST_FILTERS)[number]): boole
   return cost === Number(filter);
 }
 
-export function DeckBuilder({ initial, onSave, onCancel }: Props) {
+export function DeckBuilder({ initial, format, onSave, onCancel }: Props) {
   const [name, setName] = useState(initial.name);
   const [cards, setCards] = useState<string[]>(initial.cards);
   const [cost, setCost] = useState<(typeof COST_FILTERS)[number]>("すべて");
@@ -39,20 +41,20 @@ export function DeckBuilder({ initial, onSave, onCancel }: Props) {
 
   const pool = useMemo(
     () =>
-      ALL_CARDS.filter((c) => STARTER.sets.includes(c.set) && (c.class === deckClass || c.class === "neutral"))
+      ALL_CARDS.filter((c) => inFormat(FORMATS[format], c) && (c.class === deckClass || c.class === "neutral"))
         .filter((c) => costMatches(c.cost, cost))
         .filter((c) => type === "all" || c.type === type)
         .filter((c) => owner === "all" || (owner === "class" ? c.class === deckClass : c.class === "neutral"))
         .filter((c) => query === "" || c.name.includes(query) || c.text.includes(query))
         .sort(compareCards),
-    [deckClass, cost, type, owner, query],
+    [format, deckClass, cost, type, owner, query],
   );
 
   const deckCards = [...counts.keys()]
     .map((id) => CARDS_BY_ID.get(id))
     .filter((c): c is Card => c !== undefined)
     .sort(compareCards);
-  const problems = deckProblems(STARTER, deckClass, cards.map((id) => CARDS_BY_ID.get(id)).filter((c): c is Card => !!c));
+  const problems = deckProblems(FORMATS[format], deckClass, cards.map((id) => CARDS_BY_ID.get(id)).filter((c): c is Card => !!c));
 
   const add = (c: Card) => {
     if ((counts.get(c.id) ?? 0) < MAX_COPIES && cards.length < DECK_SIZE) setCards([...cards, c.id]);
@@ -137,7 +139,9 @@ export function DeckBuilder({ initial, onSave, onCancel }: Props) {
           <strong class={cards.length === DECK_SIZE ? "ok" : ""}>
             {cards.length}/{DECK_SIZE}枚
           </strong>
-          <span class="muted">{CLASS_NAMES[deckClass]}</span>
+          <span class="muted">
+            {CLASS_NAMES[deckClass]} / {FORMATS[format].name}
+          </span>
         </div>
         <div class="curve" aria-label="コスト分布">
           {curve.map((n, i) => (

@@ -1,20 +1,21 @@
 // AI 同士の自動対戦（総当たり）と勝率の集計。複数の Web Worker で並列に実行する（試合を 1 つずつ配る。src/sim/pool.ts）。
+// 選べるデッキは画面で選んだフォーマットのもの（フォーマットを変えると作り直す。App.tsx）。
 
 import { useEffect, useRef, useState } from "preact/hooks";
 import { AGENTS } from "../ai/registry";
 import { CLASS_NAMES } from "../cards";
 import type { GameState, PlayerIndex } from "../engine";
 import type { Deck } from "../cards/deck";
-import { DEFAULT_DECKS } from "../cards/defaultDecks";
 import { runPool } from "../sim/pool";
 import { planGames, summarize, type Entrant, type GameRecord, type GameSpec, type TournamentSummary } from "../sim/tournament";
 import type { WorkerRequest, WorkerResponse } from "../sim/worker";
-import { isPlayable } from "./Decks";
+import { defaultDeckChoice, formatDecks, isPlayableIn, type FormatId } from "./format";
 import { Replay } from "./Replay";
 import type { SavedDeck } from "./storage";
 
 interface Props {
   saved: readonly SavedDeck[];
+  format: FormatId;
   /** リプレイの局面をサンドボックスで開く */
   onSandbox?: (state: GameState, label: string) => void;
 }
@@ -41,16 +42,19 @@ function cellColor(rate: number): string {
 
 const pct = (n: number, d: number) => (d === 0 ? "-" : `${Math.round((n / d) * 100)}%`);
 
-/** デッキと AI のチェック状態の保存先（localStorage） */
-const SELECTION_KEY = "svwb-sim:simulate-selection:v1";
+/** デッキと AI のチェック状態の保存先（localStorage。フォーマットごと） */
+const SELECTION_KEYS: Record<FormatId, string> = {
+  starter: "svwb-sim:simulate-selection:v1",
+  rotation: "svwb-sim:simulate-selection-rotation:v1",
+};
 interface Selection {
   decks: string[];
   agents: string[];
 }
-function loadSelection(): Selection {
-  const fallback: Selection = { decks: DEFAULT_DECKS.map((d) => `default:${d.key}`), agents: ["greedy"] };
+function loadSelection(format: FormatId): Selection {
+  const fallback: Selection = { decks: formatDecks(format).map((d) => defaultDeckChoice(format, d.key)), agents: ["greedy"] };
   try {
-    const v: unknown = JSON.parse(localStorage.getItem(SELECTION_KEY) ?? "null");
+    const v: unknown = JSON.parse(localStorage.getItem(SELECTION_KEYS[format]) ?? "null");
     if (typeof v !== "object" || v === null) return fallback;
     const strings = (x: unknown): string[] | null =>
       Array.isArray(x) && x.every((k) => typeof k === "string") ? (x as string[]) : null;
@@ -64,25 +68,25 @@ function loadSelection(): Selection {
   }
   return fallback;
 }
-function saveSelection(selection: Selection): void {
+function saveSelection(format: FormatId, selection: Selection): void {
   try {
-    localStorage.setItem(SELECTION_KEY, JSON.stringify(selection));
+    localStorage.setItem(SELECTION_KEYS[format], JSON.stringify(selection));
   } catch {
     // 保存できなくても動作には影響しない
   }
 }
 
-export function Simulate({ saved, onSandbox }: Props) {
+export function Simulate({ saved, format, onSandbox }: Props) {
   const options: DeckOption[] = [
-    ...DEFAULT_DECKS.map((d) => ({ key: `default:${d.key}`, deck: d, label: d.name })),
-    ...saved.filter(isPlayable).map((d) => ({ key: `saved:${d.id}`, deck: d, label: `${d.name}（保存）` })),
+    ...formatDecks(format).map((d) => ({ key: defaultDeckChoice(format, d.key), deck: d, label: d.name })),
+    ...saved.filter((d) => isPlayableIn(format, d)).map((d) => ({ key: `saved:${d.id}`, deck: d, label: `${d.name}（保存）` })),
   ];
   // 保存済みの選択には、削除されたデッキの key が残っていることがあるので、今ある選択肢だけに絞る
-  const [initial] = useState(loadSelection);
+  const [initial] = useState(() => loadSelection(format));
   const [checkedDecks, setSelected] = useState<string[]>(initial.decks);
   const [agents, setAgents] = useState<string[]>(initial.agents);
   const selected = checkedDecks.filter((k) => options.some((o) => o.key === k));
-  useEffect(() => saveSelection({ decks: checkedDecks, agents }), [checkedDecks, agents]);
+  useEffect(() => saveSelection(format, { decks: checkedDecks, agents }), [format, checkedDecks, agents]);
   const [games, setGames] = useState(10);
   const [mirror, setMirror] = useState(false);
   const [run, setRun] = useState<Run | null>(null);

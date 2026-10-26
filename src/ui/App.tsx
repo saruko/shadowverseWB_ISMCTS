@@ -4,6 +4,7 @@ import { buildHumanRecord } from "../sim/humanRecord";
 import { compareMatch, OPPONENTS as COMPARE_OPPONENTS } from "../sim/humanCompare";
 import { DeckSelect, resolveDeck, type DeckChoice } from "./DeckSelect";
 import { Decks } from "./Decks";
+import { defaultDeckChoice, FORMAT_LABELS, formatDecks, loadFormat, saveFormat, type FormatId } from "./format";
 import { Game } from "./Game";
 import { HumanCompare, loadHumanRecords, saveHumanRecords, type HumanMatchChoice } from "./HumanCompare";
 import { Sandbox, type SandboxIncoming } from "./Sandbox";
@@ -17,25 +18,31 @@ const OPPONENTS: Record<string, string> = {
   random: "よわい（ランダム）",
 };
 
-const SETUP_KEY = "svwb-sim:setup:v1";
+/** 対戦の設定の保存先（フォーマットごと） */
+const SETUP_KEYS: Record<FormatId, string> = { starter: "svwb-sim:setup:v1", rotation: "svwb-sim:setup-rotation:v1" };
 interface Setup {
   me: DeckChoice;
   ai: DeckChoice;
   agent: string;
 }
-function loadSetup(): Setup {
-  const fallback: Setup = { me: "random:elf", ai: "random:royal", agent: "greedy" };
+function loadSetup(format: FormatId): Setup {
+  // ローテーションは、ランダムなデッキより環境のデッキの方が試合らしくなるので、最初はデフォルトデッキの先頭 2 つ
+  const [d0, d1] = formatDecks(format);
+  const fallback: Setup =
+    format === "rotation" && d0 && d1
+      ? { me: defaultDeckChoice(format, d0.key), ai: defaultDeckChoice(format, d1.key), agent: "search" }
+      : { me: "random:elf", ai: "random:royal", agent: "greedy" };
   try {
-    const v: unknown = JSON.parse(localStorage.getItem(SETUP_KEY) ?? "null");
+    const v: unknown = JSON.parse(localStorage.getItem(SETUP_KEYS[format]) ?? "null");
     if (typeof v === "object" && v !== null) return { ...fallback, ...(v as Partial<Setup>) };
   } catch {
     // 保存できない環境では既定値を使う
   }
   return fallback;
 }
-function saveSetup(setup: Setup): void {
+function saveSetup(format: FormatId, setup: Setup): void {
   try {
-    localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
+    localStorage.setItem(SETUP_KEYS[format], JSON.stringify(setup));
   } catch {
     // 保存できなくても動作には影響しない
   }
@@ -56,14 +63,21 @@ export function App() {
   // サンドボックスに開く局面（リプレイの「サンドボックスで開く」）
   const [sandboxIncoming, setSandboxIncoming] = useState<SandboxIncoming | null>(null);
   const [saved, setSaved] = useState<SavedDeck[]>(() => loadDecks());
-  const [setup, setSetupState] = useState<Setup>(() => loadSetup());
+  const [format, setFormatState] = useState<FormatId>(() => loadFormat());
+  const [setup, setSetupState] = useState<Setup>(() => loadSetup(format));
   const [game, setGame] = useState<{ state: GameState; agent: string; human?: PlayerIndex; compare?: HumanMatchChoice } | null>(null);
   const [compareError, setCompareError] = useState("");
   const [error, setError] = useState("");
 
   const setSetup = (s: Setup) => {
     setSetupState(s);
-    saveSetup(s);
+    saveSetup(format, s);
+  };
+  const setFormat = (f: FormatId) => {
+    setFormatState(f);
+    saveFormat(f);
+    setSetupState(loadSetup(f));
+    setError("");
   };
   const updateDecks = (decks: SavedDeck[]) => {
     setSaved(decks);
@@ -78,8 +92,8 @@ export function App() {
   function start() {
     const seed = Math.floor(Math.random() * 2 ** 32);
     const rng = rngFrom({ rng: seed });
-    const me = resolveDeck(setup.me, saved, rng);
-    const ai = resolveDeck(setup.ai, saved, rng);
+    const me = resolveDeck(setup.me, saved, rng, format);
+    const ai = resolveDeck(setup.ai, saved, rng, format);
     if (!me || !ai) {
       setError("選んだデッキが見つからないか、未完成です");
       return;
@@ -107,7 +121,17 @@ export function App() {
     <div class="app">
       <header>
         <h1>Shadowverse: Worlds Beyond Simulator</h1>
-        <span class="muted">スターター（ベーシック＋伝説の幕開け）</span>
+        {game ? (
+          <span class="muted">{FORMAT_LABELS[format]}</span>
+        ) : (
+          <select class="format-select" value={format} title="フォーマット（デッキの一覧・デッキ構築・ランダムなデッキを切り替えます）" onChange={(e) => setFormat(e.currentTarget.value as FormatId)}>
+            {(Object.keys(FORMAT_LABELS) as FormatId[]).map((f) => (
+              <option key={f} value={f}>
+                {FORMAT_LABELS[f]}
+              </option>
+            ))}
+          </select>
+        )}
         {!game && (
           <nav class="tabs">
             {TABS.map(([key, label]) => (
@@ -122,10 +146,11 @@ export function App() {
       <main>
         {/* AI対戦とサンドボックスは、ほかのタブに移っても実行中の対戦・打ち比べと局面を残すため、隠すだけにする */}
         <div hidden={!!game || tab !== "sim"}>
-          <Simulate saved={saved} onSandbox={openSandbox} />
+          {/* フォーマットを変えたら、選べるデッキが変わるので作り直す（実行中の対戦は止まる） */}
+          <Simulate key={format} saved={saved} format={format} onSandbox={openSandbox} />
         </div>
         <div hidden={!!game || tab !== "sandbox"}>
-          <Sandbox saved={saved} incoming={sandboxIncoming} />
+          <Sandbox saved={saved} format={format} incoming={sandboxIncoming} />
         </div>
         {game ? (
           <Game
@@ -138,18 +163,18 @@ export function App() {
               : {})}
           />
         ) : tab === "decks" ? (
-          <Decks decks={saved} onChange={updateDecks} />
+          <Decks decks={saved} format={format} onChange={updateDecks} />
         ) : tab === "sim" || tab === "sandbox" ? null : tab === "compare" ? (
           <HumanCompare onStart={startCompare} saveError={compareError} />
         ) : (
           <div class="setup panel">
             <label>
               あなたのデッキ
-              <DeckSelect value={setup.me} saved={saved} onChange={(me) => setSetup({ ...setup, me })} />
+              <DeckSelect value={setup.me} saved={saved} format={format} onChange={(me) => setSetup({ ...setup, me })} />
             </label>
             <label>
               相手のデッキ
-              <DeckSelect value={setup.ai} saved={saved} onChange={(ai) => setSetup({ ...setup, ai })} />
+              <DeckSelect value={setup.ai} saved={saved} format={format} onChange={(ai) => setSetup({ ...setup, ai })} />
             </label>
             <label>
               相手の強さ
