@@ -34,6 +34,7 @@ Shadowverse: Worlds Beyond の対戦シミュレータ。概要・目標は `REA
 9. **AI の実験記録**: AI の改善で試したことと結果（不採用のものも）は `docs/ai-notes.md` に残す。新しい実験の前に読み、同じことを繰り返さない
    - 判断は勝率（探索 AI どうしなら `npm run compare`、同じシードで席とデッキを入れ替えて 200 試合程度）で行う。ランナーは Rust（`npm run compare`・`npm run rhino-compare`・`npm run svwb -- td selfplay`。`rust/README.md`）。予測精度などの代わりの指標が良くても、勝率で確かめるまで採用しない（評価関数の学習は予測精度が上がったのに勝率は下がった）
    - 1 組 20 試合の勝率表は 1 マス ±10% ほどぶれる。小さな差で結論を出さない
+   - 候補を 3 つ以上比べて一番を選んだときは、選ぶのに使っていない試合番号（`compare` の最初の試合番号・`--start` 等をずらす）で一番の候補を確かめ直してから採用する。上位から選ぶと、選んだ試合でだけ強く見えるものを拾う（`svwb meta` のふるいの一番が確かめで逆転した。論文 AutoTavern の G4 も同じ）。確かめた試合番号も `docs/ai-notes.md` に書く
    - ユーザーの PC で回した自己対戦・モデル・ログは、`npm run pack-run` でまとめたものを共有フォルダ（`/mnt/project-files/`）の `data/selfplay/<名前>/`・`data/models/<名前>/`・`logs/<名前>/` に展開して置く。各回の中身は `logs/<名前>/MANIFEST.md`（`docs/commands.md`「pack-run」）
 
 ## ルールの扱い
