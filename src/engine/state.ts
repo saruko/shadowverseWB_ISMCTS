@@ -112,6 +112,7 @@ export function newBoardCard(state: GameState, cardId: string, from?: HandCard):
     kind: "amulet",
     countdown: card.type === "amulet" ? (card.countdown ?? null) : null,
     sigils: st.earthSigil ? 1 : null,
+    ...(st.evidence ? { evidence: 1 } : {}),
     actedThisTurn: false,
   };
   return amulet;

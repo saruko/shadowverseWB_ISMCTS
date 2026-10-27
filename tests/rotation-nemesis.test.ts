@@ -656,3 +656,199 @@ describe("第9弾（デッキに重複するカードがない）", () => {
   });
 });
 
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」（【証拠】【融合】アミュレット。docs/rules.md 8章・12章） ----
+
+const evidenceOf = (s: GameState, p: PlayerIndex) =>
+  board(s, p).flatMap((c) => (c.kind === "amulet" && c.evidence !== undefined ? [c.evidence] : []));
+/** 自分の場に証拠の数 n の『神域の物証』を置く */
+const placeEvidence = (s: GameState, p: PlayerIndex, n: number) => {
+  const a = toBoard(s, p, "神域の物証");
+  if (a.kind === "amulet") a.evidence = n;
+  return a;
+};
+const fuse = (s: GameState, host: number, ...materials: number[]) => applyAction(s, { type: "fuse", host, materials });
+
+describe("第10弾（【証拠】【融合】アミュレット）", () => {
+  it("組み立て失敗: 『改良型・操り人形』を手札に加え、それは【必殺】【守護】からランダム1つを持つ（場に出しても持つ）", () => {
+    const seen = new Set<string>();
+    for (let seed = 1; seed <= 8; seed++) {
+      const { s, me } = setup({ seed });
+      let t = play(s, toHand(s, me, "組み立て失敗"));
+      expect(handNames(t, me)).toEqual(["改良型・操り人形"]);
+      const kws = t.players[me].hand[0]!.keywords;
+      expect(kws).toHaveLength(1);
+      expect(["bane", "ward"]).toContain(kws[0]);
+      seen.add(kws[0]!);
+      t = play(t, t.players[me].hand[0]!.iid);
+      expect(find(t, me, "改良型・操り人形")?.keywords).toContain(kws[0]);
+    }
+    expect(seen.size).toBe(2); // どちらも出る
+  });
+
+  it("最凶の収容: スペルにも融合できる。融合したとき『神域の物証』を場に出す。証拠1では破壊は働かず、回復だけ働く", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, F);
+    s.players[me].leaderHp = 10;
+    const host = toHand(s, me, "最凶の収容");
+    let t = fuse(s, host, toHand(s, me, "神域の物証"));
+    expect(t.players[me].hand.map((h) => h.iid)).toEqual([host]);
+    expect(evidenceOf(t, me)).toEqual([1]);
+    t = play(t, host);
+    expect(t.players[me].leaderHp).toBe(12);
+    expect(follower(t, e.iid)).toBeDefined(); // 証拠が2未満なので破壊しない
+    expect(evidenceOf(t, me)).toEqual([1]); // 証拠も減らない
+  });
+
+  it("最凶の収容: 証拠が無いときも破壊は働かない", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, F);
+    s.players[me].leaderHp = 10;
+    const t = play(s, toHand(s, me, "最凶の収容"));
+    expect(t.players[me].leaderHp).toBe(12);
+    expect(follower(t, e.iid)).toBeDefined();
+  });
+
+  it("最凶の収容: 証拠2なら-2して（0で破壊）、相手の攻撃力最大のフォロワーを破壊", () => {
+    const { s, me, opp } = setup();
+    const big = toBoard(s, opp, F); // 5/4
+    const small = toBoard(s, opp, F, { attack: 1 });
+    placeEvidence(s, me, 2);
+    const t = play(s, toHand(s, me, "最凶の収容"));
+    expect(follower(t, big.iid)).toBeUndefined();
+    expect(follower(t, small.iid)).toBeDefined();
+    expect(evidenceOf(t, me)).toEqual([]);
+  });
+
+  it("最凶の収容: 証拠3なら1残る", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, F);
+    placeEvidence(s, me, 3);
+    const t = play(s, toHand(s, me, "最凶の収容"));
+    expect(follower(t, e.iid)).toBeUndefined();
+    expect(evidenceOf(t, me)).toEqual([1]);
+  });
+
+  it("滅びの怪腕: 融合していなければ4ダメージ、融合していたなら8ダメージ（スペルでも「融合していたなら」が働く）", () => {
+    for (const [fused, rest] of [
+      [false, 6],
+      [true, 2],
+    ] as const) {
+      const { s, me, opp } = setup();
+      const e = toBoard(s, opp, F, { defense: 10 });
+      const host = toHand(s, me, "滅びの怪腕");
+      let t = s;
+      if (fused) {
+        t = fuse(t, host, toHand(t, me, "神域の物証"));
+        expect(evidenceOf(t, me)).toEqual([1]);
+      }
+      t = play(t, host);
+      expect(follower(t, e.iid)?.defense).toBe(rest);
+    }
+  });
+
+  it("人滅の執事: ラストワードで『神域の物証』2枚を手札に", () => {
+    const { s, me } = setup();
+    const b = toBoard(s, me, "人滅の執事");
+    // 自分のフォロワーを破壊する手段として、体力を0にしてターンを終える
+    follower(s, b.iid)!.defense = 0;
+    const t = endTurn(s);
+    expect(follower(t, b.iid)).toBeUndefined();
+    expect(handNames(t, me)).toEqual(["神域の物証", "神域の物証"]);
+  });
+
+  it("人滅の資産家: ファンファーレで『神域の物証』2枚。自分がアミュレットを融合したとき相手のフォロワーすべてに1ダメージ（アミュレット以外の融合では働かない）", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, F);
+    let t = play(s, toHand(s, me, "人滅の資産家"));
+    expect(handNames(t, me)).toEqual(["神域の物証", "神域の物証"]);
+    // フォロワーを素材にする融合（ウィッチの恍惚の才媛の【融合】カード）では働かない
+    t = fuse(t, toHand(t, me, "恍惚の才媛"), toHand(t, me, F));
+    expect(follower(t, e.iid)?.defense).toBe(4);
+    const host = toHand(t, me, "滅びの怪腕");
+    t = fuse(t, host, t.players[me].hand[0]!.iid);
+    expect(follower(t, e.iid)?.defense).toBe(3);
+  });
+
+  it("人滅の資産家: 進化時に【融合】を持つカード1枚を引く", () => {
+    const { s, me } = setup({ turn: 5 });
+    s.players[me].ep = 2;
+    putInDeck(s, me, [F, F, "ディメンションストレンジャー", "最凶の収容"]);
+    const a = toBoard(s, me, "人滅の資産家");
+    const t = evolve(s, a.iid);
+    expect(handNames(t, me)).toEqual(["最凶の収容"]);
+  });
+
+  it("ディメンションストレンジャー: 自分が融合したとき（素材を問わない）突進。超進化時に疾走", () => {
+    const { s, me } = setup({ turn: 7 });
+    s.players[me].sep = 2;
+    const d = toBoard(s, me, "ディメンションストレンジャー", { enteredTurn: s.turn });
+    let t = fuse(s, toHand(s, me, "恍惚の才媛"), toHand(s, me, F));
+    expect(follower(t, d.iid)?.keywords).toContain("rush");
+    expect(follower(t, d.iid)?.keywords).not.toContain("storm");
+    t = superEvolve(t, d.iid);
+    expect(follower(t, d.iid)?.keywords).toContain("storm");
+  });
+
+  it("ディメンションストレンジャー: ラストワードでクレスト（カウントダウン2）。融合でカウント-1、0で破壊されて『ディメンションストレンジャー』を出す", () => {
+    const { s, me } = setup();
+    const d = toBoard(s, me, "ディメンションストレンジャー");
+    follower(s, d.iid)!.defense = 0;
+    let t = endTurn(s);
+    expect(follower(t, d.iid)).toBeUndefined();
+    expect(t.players[me].crests.map((c) => c.countdown)).toEqual([2]);
+    // 自分のターン開始時にカウントが1進む
+    t = endTurn(t);
+    expect(t.players[me].crests.map((c) => c.countdown)).toEqual([1]);
+    expect(names(t, me)).toEqual([]);
+    t = fuse(t, toHand(t, me, "最凶の収容"), toHand(t, me, "神域の物証"));
+    expect(t.players[me].crests).toEqual([]);
+    expect(names(t, me)).toEqual(["神域の物証", "ディメンションストレンジャー"]);
+  });
+
+  it("ランチャーキャット: ファンファーレでアタックアーティファクトとエンシェントアーティファクトを出す", () => {
+    const { s, me } = setup();
+    const t = play(s, toHand(s, me, "ランチャーキャット"));
+    expect(names(t, me)).toEqual(["ランチャーキャット", "アタックアーティファクト", "エンシェントアーティファクト"]);
+  });
+
+  it("人滅の紳士: 自分がアミュレットを融合したとき、相手のフォロワーからランダム1枚を破壊し、自分のリーダーを2回復", () => {
+    const { s, me, opp } = setup();
+    toBoard(s, opp, F);
+    toBoard(s, opp, F);
+    let t = play(s, toHand(s, me, "人滅の紳士"));
+    expect(handNames(t, me)).toEqual(["神域の物証", "神域の物証"]);
+    t.players[me].leaderHp = 10;
+    t = fuse(t, toHand(t, me, "人滅の三悪・ランペイジ"), t.players[me].hand[0]!.iid, t.players[me].hand[1]!.iid);
+    expect(board(t, opp)).toHaveLength(1);
+    expect(t.players[me].leaderHp).toBe(12);
+    // 2枚を素材にしても、融合したときの能力は1回だけ働く（出る『神域の物証』も1枚）
+    expect(evidenceOf(t, me)).toEqual([1]);
+  });
+
+  it("人滅の三悪・ランペイジ: 選んだフォロワーと同名の相手のフォロワーすべてを破壊。融合していなければ最大体力はそのまま", () => {
+    const { s, me, opp } = setup();
+    const a = toBoard(s, opp, F);
+    const b = toBoard(s, opp, F);
+    const c = toBoard(s, opp, "撃針の看守");
+    const t = play(s, toHand(s, me, "人滅の三悪・ランペイジ"), [a.iid]);
+    expect(follower(t, a.iid)).toBeUndefined();
+    expect(follower(t, b.iid)).toBeUndefined();
+    expect(follower(t, c.iid)).toBeDefined();
+    expect(t.players[opp].leaderMaxHp).toBe(20);
+  });
+
+  it("人滅の三悪・ランペイジ: 融合していたなら相手のリーダーの最大体力を半分（端数切り上げ）。体力は新しい最大値まで下がる", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, F);
+    s.players[opp].leaderMaxHp = 15;
+    s.players[opp].leaderHp = 12;
+    const host = toHand(s, me, "人滅の三悪・ランペイジ");
+    let t = fuse(s, host, toHand(s, me, "神域の物証"));
+    expect(evidenceOf(t, me)).toEqual([1]);
+    t = play(t, host); // 候補が1枚なので自動で選ばれる
+    expect(follower(t, e.iid)).toBeUndefined();
+    expect(t.players[opp].leaderMaxHp).toBe(8);
+    expect(t.players[opp].leaderHp).toBe(8);
+  });
+});

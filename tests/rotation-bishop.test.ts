@@ -762,3 +762,215 @@ describe("フォロワー", () => {
     expect(u.players[me].leaderHp).toBe(12);
   });
 });
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+
+const RABBIT = "地害の兎";
+const FEATHER = "燃え滾る闘志・フェザー";
+const evolveOf = (s: GameState, iid: number | undefined) => (iid === undefined ? undefined : follower(s, iid)?.evolve);
+const rabbits = (s: GameState, p: PlayerIndex) => board(s, p).filter((c) => c.cardId === rid(RABBIT));
+
+describe("第10弾", () => {
+  // エンジンの消滅（banish）は手札のカードに働かない（場・デッキ・クレストだけ）ので、地害の兎は unimplemented。
+  // エンジンが手札のカードの消滅に対応したら skip を外す
+  it("地害の兎: 場に出たとき、手札のコスト最小のカードを消滅させる（『地害の兎』2枚ならそれぞれが1枚ずつ）", () => {
+    {
+      const { s, me } = setup();
+      toHand(s, me, "地害の矯正者"); // コスト8
+      toHand(s, me, "神域の物証"); // コスト1
+      const grave = s.players[me].graveyard;
+      const t = play(s, toHand(s, me, "不毛の証言"), 1); // （2）『地害の兎』を出す
+      expect(handNames(t, me)).toEqual(["地害の矯正者"]);
+      expect(t.players[me].graveyard).toBe(grave + 1); // 墓場に行くのはプレイしたスペルだけ（消滅したカードは行かない）
+    }
+    {
+      const { s, me } = setup();
+      s.players[me].pp = 5;
+      toHand(s, me, "地害の矯正者");
+      toHand(s, me, "神域の物証");
+      toHand(s, me, "神域の物証");
+      const t = play(s, toHand(s, me, "荒廃の繁殖"));
+      expect(handNames(t, me)).toEqual(["地害の矯正者"]);
+    }
+  });
+
+  it("地害の兎: 場に出たとき、これは進化する（手札があってもなくても）。ラストワードで相手のリーダーに2ダメージ", () => {
+    {
+      const { s, me } = setup();
+      toHand(s, me, "神域の物証");
+      const t = play(s, toHand(s, me, "不毛の証言"), 1);
+      expect(rabbits(t, me)).toHaveLength(1);
+      expect(evolveOf(t, rabbits(t, me)[0]?.iid)).toBe("evolved");
+    }
+    const { s, me, opp } = setup();
+    let t = play(s, toHand(s, me, "不毛の証言"), 1);
+    expect(evolveOf(t, rabbits(t, me)[0]?.iid)).toBe("evolved");
+    t.players[me].pp = 10;
+    t = play(t, toHand(t, me, "神紋ユラティオ")); // 場のフォロワーすべてを破壊
+    expect(rabbits(t, me)).toHaveLength(0);
+    expect(t.players[opp].leaderHp).toBe(18);
+  });
+
+  it("荒廃の繁殖: 『地害の兎』2枚を出し（それぞれ進化する）、エンハンス_8なら4枚", () => {
+    {
+      const { s, me } = setup();
+      s.players[me].pp = 5;
+      const t = play(s, toHand(s, me, "荒廃の繁殖"));
+      expect(rabbits(t, me)).toHaveLength(2);
+      expect(rabbits(t, me).every((c) => evolveOf(t, c.iid) === "evolved")).toBe(true);
+    }
+    {
+      const { s, me } = setup();
+      const t = play(s, toHand(s, me, "荒廃の繁殖"));
+      expect(rabbits(t, me)).toHaveLength(4);
+    }
+  });
+
+  it("地害の加工人: ラストワードで『神域の物証』2枚を手札に加える", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "地害の加工人");
+    const t = play(s, toHand(s, me, "神紋ユラティオ"));
+    expect(handNames(t, me)).toEqual(["神域の物証", "神域の物証"]);
+  });
+
+  it("孤高なる鍛錬: 自分のフォロワーを選んで+2/+2とバリア。自分のフォロワーがいなければプレイできない", () => {
+    const { s, me } = setup();
+    const spellIid = toHand(s, me, "孤高なる鍛錬");
+    expect(can(s, { type: "play", iid: spellIid })).toBe(false);
+    const a = toBoard(s, me, "清純なる白狐");
+    const b = toBoard(s, me, FEATHER);
+    let t = applyAction(s, { type: "play", iid: spellIid });
+    expect(t.pending?.kind).toBe("choose");
+    t = applyAction(t, { type: "choose", targets: [a.iid] });
+    expect(follower(t, a.iid)?.attack).toBe(3);
+    expect(follower(t, a.iid)?.defense).toBe(5);
+    expect(follower(t, a.iid)?.keywords).toContain("barrier");
+    expect(follower(t, b.iid)?.attack).toBe(5);
+  });
+
+  it("地害の調教師: ファンファーレで『地害の兎』を手札に加え、進化時にPPを1回復", () => {
+    const { s, me } = setup({ turn: 10 });
+    const iid = toHand(s, me, "地害の調教師");
+    let t = play(s, iid);
+    expect(handNames(t, me)).toEqual([RABBIT]);
+    expect(t.players[me].pp).toBe(7);
+    t = applyAction(t, { type: "evolve", iid });
+    expect(t.players[me].pp).toBe(8);
+  });
+
+  it("不毛の証言: （1）相手のフォロワーからランダム1枚に4ダメージ。クレストは2回のターン開始時に1回復して『神域の物証』を手札に", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, FEATHER);
+    s.players[me].leaderHp = 10;
+    let t = play(s, toHand(s, me, "不毛の証言"), 0);
+    expect(follower(t, e.iid)).toBeUndefined();
+    expect(t.players[me].crests.map((c) => c.countdown)).toEqual([2]);
+    t = passTurns(t, 1);
+    expect(t.players[me].leaderHp).toBe(11);
+    expect(handNames(t, me).filter((n) => n === "神域の物証")).toHaveLength(1);
+    expect(t.players[me].crests.map((c) => c.countdown)).toEqual([1]);
+    t = passTurns(t, 1);
+    expect(t.players[me].leaderHp).toBe(12);
+    expect(handNames(t, me).filter((n) => n === "神域の物証")).toHaveLength(2);
+    expect(t.players[me].crests).toEqual([]);
+  });
+
+  it("有翼の奏者: ファンファーレで『ホーリーファルコン』を出し、進化時に自分の他のフォロワーすべては+1/+1", () => {
+    const { s, me } = setup({ turn: 10 });
+    const iid = toHand(s, me, "有翼の奏者");
+    let t = play(s, iid);
+    expect(names(t, me)).toEqual(["有翼の奏者", "ホーリーファルコン"]);
+    const falcon = board(t, me)[1]!;
+    t = applyAction(t, { type: "evolve", iid });
+    expect(follower(t, falcon.iid)?.attack).toBe(3);
+    expect(follower(t, falcon.iid)?.defense).toBe(3);
+    expect(follower(t, iid)?.attack).toBe(3); // これ自身は+1/+1しない（1/1 の進化で 3/3）
+  });
+
+  it("地害の三悪・ラピッドハット: 選んだ相手のフォロワーを消滅させ『地害の兎』を出す。進化時のクレストは次のターン開始時に『地害の兎』を出す", () => {
+    const { s, me, opp } = setup({ turn: 10 });
+    const e = toBoard(s, opp, FEATHER);
+    const iid = toHand(s, me, "地害の三悪・ラピッドハット");
+    let t = play(s, iid);
+    expect(follower(t, e.iid)).toBeUndefined();
+    expect(t.players[opp].graveyard).toBe(s.players[opp].graveyard);
+    expect(names(t, me)).toEqual(["地害の三悪・ラピッドハット", RABBIT]);
+    t = applyAction(t, { type: "evolve", iid });
+    expect(t.players[me].crests.map((c) => c.countdown)).toEqual([1]);
+    t = passTurns(t, 1);
+    expect(rabbits(t, me)).toHaveLength(2);
+    expect(t.players[me].crests).toEqual([]);
+  });
+
+  it("地害の三悪・ラピッドハット: 超進化ではクレストのカウントが+1されて2になり、2回『地害の兎』を出す", () => {
+    const { s, me } = setup({ turn: 10 });
+    const h = toBoard(s, me, "地害の三悪・ラピッドハット");
+    let t = applyAction(s, { type: "superEvolve", iid: h.iid });
+    expect(t.players[me].crests.map((c) => c.countdown)).toEqual([2]);
+    t = passTurns(t, 1);
+    expect(rabbits(t, me)).toHaveLength(1);
+    expect(t.players[me].crests.map((c) => c.countdown)).toEqual([1]);
+    t = passTurns(t, 1);
+    expect(rabbits(t, me)).toHaveLength(2);
+    expect(t.players[me].crests).toEqual([]);
+  });
+
+  it("亜教の偶像: 攻撃できない。自分のターンに相手のフォロワーが場で消滅すると、それのコピーを自分の場に出す（進化時の消滅でも）", () => {
+    const { s, me, opp } = setup({ turn: 10 });
+    const idol = toBoard(s, me, "亜教の偶像");
+    const e = toBoard(s, opp, FEATHER, { attack: 9, defense: 9, maxDefense: 9 });
+    expect(can(s, { type: "attack", attacker: idol.iid, target: "leader" })).toBe(false);
+    const t = applyAction(s, { type: "evolve", iid: idol.iid });
+    expect(follower(t, e.iid)).toBeUndefined();
+    expect(names(t, me)).toEqual(["亜教の偶像", FEATHER]);
+    const c = board(t, me)[1]!;
+    expect(follower(t, c.iid)?.attack).toBe(5); // コピーは元のカード（場での強化は写さない）
+    expect(follower(t, c.iid)?.defense).toBe(4);
+  });
+
+  it("亜教の偶像: 相手のターンに相手のフォロワーが消滅しても、コピーは出ない", () => {
+    const { s, me, opp } = setup();
+    toBoard(s, me, "亜教の偶像");
+    const g = toBoard(s, opp, "ゴースト"); // 持ち主（相手）のターン終了時に消滅する
+    const t = passTurns(s, 1);
+    expect(follower(t, g.iid)).toBeUndefined();
+    expect(names(t, me)).toEqual(["亜教の偶像"]);
+  });
+
+  it("亜教の偶像: ラピッドハットのファンファーレで消滅させた相手のフォロワーもコピーする", () => {
+    const { s, me, opp } = setup();
+    toBoard(s, me, "亜教の偶像");
+    toBoard(s, opp, FEATHER);
+    const t = play(s, toHand(s, me, "地害の三悪・ラピッドハット"));
+    expect(sorted(names(t, me))).toEqual(sorted(["亜教の偶像", "地害の三悪・ラピッドハット", FEATHER, RABBIT]));
+  });
+
+  it("闘志の修行僧: 攻撃時に+2/+2とバリアを得てから戦闘する。1ターンに2回攻撃できる", () => {
+    const { s, me, opp } = setup();
+    const m = toBoard(s, me, "闘志の修行僧");
+    let t = applyAction(s, { type: "attack", attacker: m.iid, target: "leader" });
+    expect(t.players[opp].leaderHp).toBe(14);
+    expect(follower(t, m.iid)?.keywords).toContain("barrier");
+    t = applyAction(t, { type: "attack", attacker: m.iid, target: "leader" });
+    expect(t.players[opp].leaderHp).toBe(6);
+    expect(follower(t, m.iid)?.defense).toBe(8);
+  });
+
+  it("地害の矯正者: 選んだ相手のフォロワーを消滅させ『地害の兎』2枚を出す。超進化時に2枚引いて2回復", () => {
+    const { s, me, opp } = setup({ turn: 10 });
+    const e1 = toBoard(s, opp, FEATHER);
+    const e2 = toBoard(s, opp, FEATHER);
+    const iid = toHand(s, me, "地害の矯正者");
+    let t = applyAction(s, { type: "play", iid });
+    expect(t.pending?.kind).toBe("choose");
+    t = applyAction(t, { type: "choose", targets: [e1.iid] });
+    expect(follower(t, e1.iid)).toBeUndefined();
+    expect(follower(t, e2.iid)).toBeDefined();
+    expect(rabbits(t, me)).toHaveLength(2);
+    t.players[me].leaderHp = 10;
+    const hand = t.players[me].hand.length;
+    t = applyAction(t, { type: "superEvolve", iid });
+    expect(t.players[me].hand.length).toBe(hand + 2);
+    expect(t.players[me].leaderHp).toBe(12);
+  });
+});

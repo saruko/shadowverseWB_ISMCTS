@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { MODEL_FEATURES, MULLIGAN_MODEL, MULLIGAN_ROLES, MULLIGAN_WEIGHTS } from "../src/ai/data";
 import { agentOf } from "../src/ai/registry";
-import { DEFAULT_DECKS, ROTATION_DECKS } from "../src/cards/defaultDecks";
+import { DEFAULT_DECKS, ROTATION_9_DECKS } from "../src/cards/defaultDecks";
 import { rngFrom } from "../src/engine";
 import { callEngine } from "../src/engine/wasm";
 import { randomDeck } from "../src/sim/decks";
@@ -94,11 +94,11 @@ describe("AI のデータ", () => {
     }
   });
 
-  it("ローテーションの試合の補正（data/value-net-rotation.json）は、ローテーションのデッキのカードを入力に持ち、Node では WASM に渡してある", () => {
+  it("ローテーションの試合の補正（data/value-net-rotation.json）は、学んだ第9弾環境のデッキのカードを入力に持ち、Node では WASM に渡してある", () => {
     const text = readFileSync(__SVWB_ROTATION_NET_PATH__, "utf8");
     const vocab = new Set(parseValueNetModel(JSON.parse(text)).vocab);
-    expect(ROTATION_DECKS.length).toBeGreaterThan(0);
-    for (const d of ROTATION_DECKS) for (const id of d.cards) expect(vocab.has(id), `${d.name} ${id}`).toBe(true);
+    expect(ROTATION_9_DECKS.length).toBeGreaterThan(0);
+    for (const d of ROTATION_9_DECKS) for (const id of d.cards) expect(vocab.has(id), `${d.name} ${id}`).toBe(true);
     // 読み込んだときに渡してあるので、もう一度渡すと誤りになる（渡していなければ通ってしまう）
     expect(() => callEngine({ f: "setRotationNet", text })).toThrow(/もう設定されています/);
   });

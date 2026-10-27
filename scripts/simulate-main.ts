@@ -2,7 +2,7 @@
 
 import { writeFileSync } from "node:fs";
 import { AGENTS } from "../src/ai/registry";
-import { DEFAULT_DECKS, ROTATION_DECKS } from "../src/cards/defaultDecks";
+import { DEFAULT_DECKS, ROTATION_9_DECKS, ROTATION_DECKS } from "../src/cards/defaultDecks";
 import { planGames, runGame, summarize, type Entrant, type GameRecord } from "../src/sim/tournament";
 import { isParallelWorker, parallelMap } from "./parallel";
 
@@ -11,8 +11,8 @@ interface Args {
   seed: number;
   agents: string[];
   decks: string[] | "all";
-  /** デッキを選ぶフォーマット（starter は data/decks、rotation は data/decks-rotation） */
-  format: "starter" | "rotation";
+  /** デッキを選ぶフォーマット（starter は data/decks、rotation は data/decks-rotation、rotation9 は data/decks-rotation-9） */
+  format: "starter" | "rotation" | "rotation9";
   mirror: boolean;
   json: string | null;
   /** 全試合を n 個に分けたうちの i 番目（0 始まり）だけを行う。CI で並列に回すため */
@@ -38,7 +38,7 @@ function parseArgs(argv: string[]): Args {
       args.decks = v === "all" ? "all" : v.split(",");
     } else if (key === "--format") {
       const v = value();
-      if (v !== "starter" && v !== "rotation") throw new Error(`--format は starter か rotation です: ${v}`);
+      if (v !== "starter" && v !== "rotation" && v !== "rotation9") throw new Error(`--format は starter・rotation・rotation9 のどれかです: ${v}`);
       args.format = v;
     } else if (key === "--mirror") args.mirror = true;
     else if (key === "--json") args.json = value();
@@ -64,10 +64,10 @@ const pad = (s: string, w: number) => s + " ".repeat(Math.max(0, w - width(s)));
 
 export async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
-  const pool = args.format === "rotation" ? ROTATION_DECKS : DEFAULT_DECKS;
+  const pool = args.format === "rotation" ? ROTATION_DECKS : args.format === "rotation9" ? ROTATION_9_DECKS : DEFAULT_DECKS;
   const decks = args.decks === "all" ? pool : args.decks.map((name) => {
     const d = pool.find((x) => x.name === name || x.key === name);
-    if (!d) throw new Error(`${args.format === "rotation" ? "ローテーションの" : "デフォルト"}デッキがありません: ${name}`);
+    if (!d) throw new Error(`${args.format === "starter" ? "デフォルト" : "ローテーションの"}デッキがありません: ${name}`);
     return d;
   });
   for (const k of Object.keys(args.deckAgents)) {

@@ -124,6 +124,8 @@ export interface AmuletOnBoard extends OnBoardBase {
   countdown: number | null;
   /** 【土の印】アミュレットのスタック。持たなければ null */
   sigils: number | null;
+  /** 【証拠】アミュレットの証拠の数（証拠・アミュレットだけ。第10弾） */
+  evidence?: number;
   actedThisTurn: boolean;
 }
 

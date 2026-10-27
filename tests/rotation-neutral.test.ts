@@ -603,3 +603,119 @@ describe("第9弾", () => {
     expect(follower(t, e.iid)?.defense).toBe(4);
   });
 });
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」: 【証拠】（docs/rules.md 12章） ----
+
+const evidenceOf = (s: GameState, p: PlayerIndex) =>
+  board(s, p).flatMap((c) => (c.kind === "amulet" && c.evidence !== undefined ? [c] : []));
+
+describe("第10弾: 【証拠】", () => {
+  it("証拠・アミュレットが場に出ると数は1。2つ目が出ると、元の方を消滅させて数を合算する（場には1つ）", () => {
+    const { s, me } = setup();
+    let t = play(s, toHand(s, me, "神域の物証"));
+    expect(evidenceOf(t, me).map((c) => c.evidence)).toEqual([1]);
+    t = play(t, toHand(t, me, "神域の物証"));
+    expect(evidenceOf(t, me).map((c) => c.evidence)).toEqual([2]);
+    expect(names(t, me)).toEqual(["神域の物証"]);
+  });
+
+  it("理想郷・ニーゲルヘリア: 合算で消滅したとき、自分のリーダーを2回復する", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "理想郷・ニーゲルヘリア");
+    s.players[me].leaderHp = 10;
+    const t = play(s, toHand(s, me, "神域の物証"));
+    expect(names(t, me)).toEqual(["神域の物証"]);
+    expect(evidenceOf(t, me)[0]?.evidence).toBe(2);
+    expect(t.players[me].leaderHp).toBe(12);
+  });
+
+  it("アクト: PP1 を払い、1枚引いて証拠を-1。数が0になったら破壊され（消滅ではないので理想郷の回復は働かない）", () => {
+    const { s, me } = setup({ deck: [FILLER_NAME, FILLER_NAME] });
+    const a = toBoard(s, me, "理想郷・ニーゲルヘリア");
+    s.players[me].leaderHp = 10;
+    const hand = s.players[me].hand.length;
+    const t = applyAction(s, { type: "act", iid: a.iid });
+    expect(t.players[me].pp).toBe(9);
+    expect(t.players[me].hand.length).toBe(hand + 1);
+    expect(evidenceOf(t, me)).toEqual([]);
+    expect(t.players[me].graveyard).toBe(s.players[me].graveyard + 1);
+    expect(t.players[me].leaderHp).toBe(10);
+  });
+
+  it("アクト: 数が2なら1になって場に残る", () => {
+    const { s, me } = setup();
+    const a = toBoard(s, me, "神域の物証");
+    if (a.kind === "amulet") a.evidence = 2;
+    const t = applyAction(s, { type: "act", iid: a.iid });
+    expect(evidenceOf(t, me).map((c) => c.evidence)).toEqual([1]);
+  });
+
+  it("相手の能力で選ばれない（相手の場に証拠とフォロワーが1枚ずつなら、選ぶ能力の候補はフォロワーだけなので自動で選ばれる）", () => {
+    const { s, me, opp } = setup();
+    toBoard(s, opp, "神域の物証");
+    toBoard(s, opp, FILLER_NAME);
+    const e2 = toBoard(s, opp, FILLER_NAME);
+    // 候補が2枚（フォロワー2枚）なら選択待ちになり、証拠・アミュレットは候補に入らない
+    const t = applyAction(s, { type: "play", iid: toHand(s, me, "理想郷の神・レゼアル") });
+    expect(t.pending?.kind === "choose" ? t.pending.candidates.length : null).toBe(2);
+    expect(t.pending?.kind === "choose" ? t.pending.candidates.includes(e2.iid) : null).toBe(true);
+    expect(t.pending?.kind === "choose" ? t.pending.candidates.some((x) => evidenceOf(t, opp).some((c) => c.iid === x)) : null).toBe(false);
+  });
+
+  it("愛の天使・エクシアス: ファンファーレで『神域の物証』を手札に加える", () => {
+    const { s, me } = setup();
+    const t = play(s, toHand(s, me, "愛の天使・エクシアス"));
+    expect(handNames(t, me)).toEqual(["神域の物証"]);
+  });
+
+  it("信心の天使・デュナメス: 選んだフォロワーに2ダメージ、『神域の物証』を手札に。進化時も同じ", () => {
+    const { s, me, opp } = setup({ turn: 5 });
+    const e = toBoard(s, opp, FILLER_NAME);
+    const iid = toHand(s, me, "信心の天使・デュナメス");
+    // 候補が1枚なら自動で選ばれる
+    let t = play(s, iid);
+    expect(follower(t, e.iid)?.defense).toBe(2);
+    expect(handNames(t, me)).toEqual(["神域の物証"]);
+    t = applyAction(t, { type: "evolve", iid });
+    expect(follower(t, e.iid)).toBeUndefined();
+    expect(handNames(t, me)).toEqual(["神域の物証", "神域の物証"]);
+  });
+
+  it("希求の天使・キュリオス: 相手のフォロワーすべてに2ダメージ、『神域の物証』2枚を手札に", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, FILLER_NAME);
+    const t = play(s, toHand(s, me, "希求の天使・キュリオス"));
+    expect(follower(t, e.iid)?.defense).toBe(2);
+    expect(handNames(t, me)).toEqual(["神域の物証", "神域の物証"]);
+  });
+
+  it("神殺現場: 自分のターン終了時、相手のフォロワーからランダム1枚を消滅させ、『神域の物証』を相手の場に出す", () => {
+    const { s, me, opp } = setup();
+    toBoard(s, me, "神殺現場");
+    const e = toBoard(s, opp, FILLER_NAME);
+    const t = applyAction(s, { type: "endTurn" });
+    expect(follower(t, e.iid)).toBeUndefined();
+    expect(t.players[opp].graveyard).toBe(s.players[opp].graveyard);
+    expect(evidenceOf(t, opp).map((c) => c.evidence)).toEqual([1]);
+  });
+
+  it("理想郷の神・レゼアル: クレストを持つと、プレイしたフォロワーはこのターン攻撃できず、破壊されると同名のカードが自分の場に出る", () => {
+    const { s, me, opp } = setup({ turn: 7 });
+    const iid = toHand(s, me, "理想郷の神・レゼアル");
+    toBoard(s, opp, FILLER_NAME);
+    let t = play(s, iid);
+    t = applyAction(t, { type: "superEvolve", iid });
+    expect(t.players[me].crests.length).toBe(1);
+    t.players[me].pp = 10;
+    const f = toHand(t, me, "愛の天使・エクシアス");
+    t = play(t, f);
+    expect(can(t, { type: "attack", attacker: f, target: "leader" })).toBe(false);
+    // 破壊されると同名のカードが自分の場に出る（自分のフォロワーを破壊する手段として、相手のターンに相手の能力で破壊されたことにする）
+    const g = follower(t, f);
+    if (!g) throw new Error("エクシアスが場にいない");
+    g.defense = 0;
+    t = applyAction(t, { type: "endTurn" });
+    expect(follower(t, f)).toBeUndefined();
+    expect(byName(t, me, "愛の天使・エクシアス")).toHaveLength(1);
+  });
+});

@@ -168,6 +168,9 @@ function checkBoardRoom(s: GameState, p: PlayerIndex, cardId: string): void {
   if (staticOf(cardId).earthSigil && s.players[p].board.some((c) => c.kind === "amulet" && c.sigils !== null)) {
     throw new SandboxError("【土の印】のアミュレットは場に 1 つまでです（印の数を編集してください）");
   }
+  if (staticOf(cardId).evidence && s.players[p].board.some((c) => c.kind === "amulet" && c.evidence !== undefined)) {
+    throw new SandboxError("証拠・アミュレットは場に 1 つまでです（証拠の数を編集してください）");
+  }
 }
 
 /** 場に置くカード。フォロワーは攻撃できる状態（前のターンから場にいる）にする */

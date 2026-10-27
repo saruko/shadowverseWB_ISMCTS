@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ローテーションのデッキ（data/decks-rotation）に合わせて、探索 AI の補正を学び直し、マリガンを比べる（メイン機で回す用）。
+# ローテーションのデッキ（既定は data/decks-rotation。環境変数 DECK_DIR で変えられる）に合わせて、探索 AI の補正を学び直し、マリガンを比べる（メイン機で回す用）。
 # 経緯と結果は docs/ai-notes.md「ローテーションのデッキで補正を学び直す」。
 #
 #   bash scripts/rotation-retrain.sh <作業フォルダ> [段階 ...]
@@ -15,14 +15,15 @@
 # 数は環境変数で変えられる（かっこ内は既定）:
 #   GAMES（60000）自己対戦の試合数、CHUNK（3000）1 ファイルの試合数、START（3200000）最初の試合番号（他の自己対戦と重ならない）、
 #   EPOCHS（3）学習のエポック、JUDGE（1000）比べる組の数（1 組 2 試合）、MULL_GAMES（10）マリガンの比べの games（1 につき 14×13×2 組）、
-#   THREADS（CPU のコア数）並列数、NODE_OPTIONS（--max-old-space-size=24000）学習のメモリ
+#   THREADS（CPU のコア数）並列数、NODE_OPTIONS（--max-old-space-size=24000）学習のメモリ、
+#   DECK_DIR（data/decks-rotation）デッキのフォルダ（2026-10-25〜26 の m1 は data/decks-rotation-9 の 14 デッキで学んだ）
 # 目安（サブ機 24 スレッドで測った値）: 自己対戦 0.65 秒/試合（介入込み）・1 試合 100KB ほど（6 万試合で 6GB）、compare 0.23 秒/試合。
 # 小さく通すなら: GAMES=20 CHUNK=10 EPOCHS=1 JUDGE=7 MULL_GAMES=1 bash scripts/rotation-retrain.sh /tmp/rot-test
 
 set -euo pipefail
 
 if [ $# -lt 1 ]; then
-  sed -n '2,24p' "$0"
+  sed -n '2,25p' "$0"
   exit 1
 fi
 W="$1"
@@ -39,7 +40,8 @@ export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=24000}"
 mkdir -p "$W/data"
 LOG="$W/main.log"
 # パスはリポジトリ直下からの相対か絶対（どのコマンドもリポジトリ直下で動く）
-DECKS="$(ls data/decks-rotation/*.txt | paste -sd, -)"
+DECK_DIR="${DECK_DIR:-data/decks-rotation}"
+DECKS="$(ls "$DECK_DIR"/*.txt | paste -sd, -)"
 log() { echo "[$(date '+%F %T')] $*" | tee -a "$LOG"; }
 
 # 自己対戦の打ち方は、スターターの最後の学び直し（docs/ai-notes.md の s2b）と同じ

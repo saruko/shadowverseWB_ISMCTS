@@ -45,8 +45,8 @@ fn is_passive(a: &Ability) -> bool {
         Trigger::TurnStart
             | Trigger::TurnEnd { .. }
             | Trigger::AllyEnter { .. }
-            | Trigger::AllyAct
-            | Trigger::AllyFuse
+            | Trigger::AllyAct { .. }
+            | Trigger::AllyFuse { .. }
             | Trigger::AllyLeaveInHand
             | Trigger::AllyDestroyed { .. }
             | Trigger::LeaderHealed

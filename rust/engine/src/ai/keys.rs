@@ -84,7 +84,10 @@ pub fn board_eq_noid(a: &OnBoard, b: &OnBoard) -> bool {
             && a.cannot_attack_until == b.cannot_attack_until
             && a.x == b.x
     } else {
-        a.countdown == b.countdown && a.sigils == b.sigils && a.acted_this_turn == b.acted_this_turn
+        a.countdown == b.countdown
+            && a.sigils == b.sigils
+            && a.evidence == b.evidence
+            && a.acted_this_turn == b.acted_this_turn
     }
 }
 
@@ -474,6 +477,10 @@ pub fn lethal_key_hash(s: &GameState) -> u32 {
                     mix(mix(h, c.countdown.unwrap_or(-1)), c.sigils.unwrap_or(-1)),
                     c.acted_this_turn as i32,
                 );
+                // 証拠の数は証拠・アミュレットだけ混ぜる（今までの局面の指紋を変えない）
+                if let Some(n) = c.evidence {
+                    h = mix(h, n);
+                }
             }
         }
         h = mix(h, pl.crests.len() as i32);

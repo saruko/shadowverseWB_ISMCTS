@@ -38,10 +38,13 @@ describe("ナイトメアの定義", () => {
       "10753110", "10753310", "10754110", "10754120", "10851110", "10851120", "10851130", "10852110", "10852120",
       "10852310", "10853110", "10853310", "10854110", "10854120", "10951110", "10951120", "10951310", "10952110",
       "10952120", "10952310", "10953110", "10953310", "10954110", "10954120", "90051140", "90054330",
+      // 第10弾「ニーゲルヘリア神殺事件」
+      "11051110", "11051120", "11051310", "11052110", "11052120", "11052310", "11053110", "11053310", "11054110",
+      "11054120",
     ];
     expect(Object.keys(NIGHTMARE_ROT).sort()).toEqual([...cards].sort());
     expect(Object.keys(NIGHTMARE_ROT_CRESTS).sort()).toEqual(
-      ["10451312", "10453312", "10454122", "10553312", "10554112", "10954112"].sort(),
+      ["10451312", "10453312", "10454122", "10553312", "10554112", "10954112", "11054122"].sort(),
     );
   });
 });
@@ -566,5 +569,229 @@ describe("その他の複雑なカード", () => {
 
   it("FILLER は能力のないフォロワー", () => {
     expect(FILLER).toBe(rid("燃え滾る闘志・フェザー"));
+  });
+});
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」（【証拠】は docs/rules.md 12章） ----
+
+const FEATHER = "燃え滾る闘志・フェザー";
+const evidenceOf = (s: GameState, p: PlayerIndex) =>
+  board(s, p).flatMap((c) => (c.kind === "amulet" && c.evidence !== undefined ? [c] : []));
+const evidenceCounts = (s: GameState, p: PlayerIndex) => evidenceOf(s, p).map((c) => c.evidence);
+
+describe("第10弾: 【証拠】を使うカード", () => {
+  it("遺言の聴取: 『神域の物証』を場に出し、もう1枚を手札に加える。2回目は合算して証拠の数2", () => {
+    const { s, me } = setup();
+    let t = play(s, toHand(s, me, "遺言の聴取"));
+    expect(evidenceCounts(t, me)).toEqual([1]);
+    expect(handNames(t, me)).toEqual(["神域の物証"]);
+    t = play(t, toHand(t, me, "遺言の聴取"));
+    expect(evidenceCounts(t, me)).toEqual([2]);
+    expect(names(t, me)).toEqual(["神域の物証"]);
+    expect(handNames(t, me)).toEqual(["神域の物証", "神域の物証"]);
+  });
+
+  it("場が満杯（5枚）で既に証拠があるとき、遺言の聴取の『神域の物証』は場に出せず、合算もしない（数は増えない）", () => {
+    const { s, me } = setup();
+    for (let i = 0; i < 4; i++) toBoard(s, me, FEATHER);
+    const e = toBoard(s, me, "神域の物証");
+    expect(board(s, me).length).toBe(5);
+    const t = play(s, toHand(s, me, "遺言の聴取"));
+    expect(board(t, me).length).toBe(5);
+    expect(evidenceOf(t, me).map((c) => c.iid)).toEqual([e.iid]);
+    expect(evidenceCounts(t, me)).toEqual([1]);
+    // 手札に加える方は働く
+    expect(handNames(t, me)).toEqual(["神域の物証"]);
+  });
+
+  it("場が満杯で証拠が無いときも、遺言の聴取の『神域の物証』は場に出ない", () => {
+    const { s, me } = setup();
+    for (let i = 0; i < 5; i++) toBoard(s, me, FEATHER);
+    const t = play(s, toHand(s, me, "遺言の聴取"));
+    expect(board(t, me).length).toBe(5);
+    expect(evidenceOf(t, me)).toEqual([]);
+    expect(handNames(t, me)).toEqual(["神域の物証"]);
+  });
+
+  it("場が満杯で合算しないので、永住の墓守の「自分のカードが場で消滅したとき」も働かない", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "永住の墓守");
+    const z = toBoard(s, me, "腐臭のゾンビ");
+    toBoard(s, me, FEATHER);
+    toBoard(s, me, FEATHER);
+    toBoard(s, me, "神域の物証");
+    const t = play(s, toHand(s, me, "遺言の聴取"));
+    expect(evidenceCounts(t, me)).toEqual([1]);
+    const zz = board(t, me).find((c) => c.iid === z.iid) as FollowerOnBoard;
+    expect([zz.attack, zz.defense]).toEqual([2, 2]);
+    expect(zz.keywords).not.toContain("rush");
+  });
+
+  it("ノクターンの尋問: 相手のフォロワーすべてに X（自分の場の証拠の数）ダメージ。その後、証拠・アミュレットを消滅（墓場に行かない）", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, me, "神域の物証");
+    if (e.kind === "amulet") e.evidence = 3;
+    toBoard(s, opp, FEATHER);
+    toBoard(s, opp, FEATHER);
+    const g = s.players[me].graveyard;
+    const t = play(s, toHand(s, me, "ノクターンの尋問"));
+    // X は消滅させる前の数（3）
+    expect(board(t, opp).map((c) => (c as FollowerOnBoard).defense)).toEqual([1, 1]);
+    expect(evidenceOf(t, me)).toEqual([]);
+    // スペルの1枚だけ墓場に（消滅した証拠・アミュレットは墓場に行かない）
+    expect(t.players[me].graveyard).toBe(g + 1);
+  });
+
+  it("ノクターンの尋問: 証拠が無ければ X は0（ダメージなし）", () => {
+    const { s, me, opp } = setup();
+    toBoard(s, opp, FEATHER);
+    const t = play(s, toHand(s, me, "ノクターンの尋問"));
+    expect((board(t, opp)[0] as FollowerOnBoard).defense).toBe(4);
+  });
+
+  it("ノクターンの尋問: 証拠・アミュレットの消滅で、鬼録の看護師の回復が働く", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "鬼録の看護師");
+    toBoard(s, me, "神域の物証");
+    s.players[me].leaderHp = 10;
+    const t = play(s, toHand(s, me, "ノクターンの尋問"));
+    expect(t.players[me].leaderHp).toBe(12);
+  });
+
+  it("告別の納棺師: ラストワードで『神域の物証』を場に出し、もう1枚を手札に加える（渇命の破壊者で破壊）", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "告別の納棺師");
+    const t = play(s, toHand(s, me, "渇命の破壊者"));
+    expect(all(t, me, "告別の納棺師").length).toBe(0);
+    expect(evidenceCounts(t, me)).toEqual([1]);
+    expect(handNames(t, me)).toEqual(["神域の物証"]);
+  });
+
+  it("永住の墓守: ファンファーレで腐臭のゾンビ。自分のターンに証拠の合算で消滅すると、死者・フォロワー1枚が+2/+2して突進", () => {
+    const { s, me } = setup();
+    let t = play(s, toHand(s, me, "永住の墓守"));
+    expect(find(t, me, "腐臭のゾンビ")).toBeDefined();
+    toBoard(t, me, "神域の物証");
+    t = play(t, toHand(t, me, "遺言の聴取"));
+    expect(evidenceCounts(t, me)).toEqual([2]);
+    const zz = find(t, me, "腐臭のゾンビ") as FollowerOnBoard;
+    expect([zz.attack, zz.defense]).toEqual([4, 4]);
+    expect(zz.keywords).toContain("rush");
+    // 墓守自身（死者ではない）は強化されない
+    const k = find(t, me, "永住の墓守") as FollowerOnBoard;
+    expect([k.attack, k.defense]).toEqual([4, 4]);
+  });
+
+  it("永住の墓守: 進化時に『神域の物証』を場に出す", () => {
+    const { s, me } = setup({ turn: 5 });
+    const k = toBoard(s, me, "永住の墓守");
+    const t = evolve(s, k.iid);
+    expect(evidenceCounts(t, me)).toEqual([1]);
+  });
+
+  it("残思探偵・ノクターン: 必殺のゴーストを出す。自分のターン終了時にゴーストが消滅すると、+2/+4 守護のスケルトン", () => {
+    const { s, me } = setup();
+    let t = play(s, toHand(s, me, "残思探偵・ノクターン"));
+    expect(find(t, me, "ゴースト")?.keywords).toContain("bane");
+    t = endTurn(t);
+    expect(find(t, me, "ゴースト")).toBeUndefined();
+    const sk = all(t, me, "スケルトン");
+    expect(sk.length).toBe(1);
+    expect([sk[0]?.attack, sk[0]?.defense]).toEqual([3, 5]);
+    expect(sk[0]?.keywords).toContain("ward");
+  });
+
+  it("残思探偵・ノクターン: 進化時に『遺言の聴取』を手札に加える", () => {
+    const { s, me } = setup({ turn: 5 });
+    const n = toBoard(s, me, "残思探偵・ノクターン");
+    const t = evolve(s, n.iid);
+    expect(handNames(t, me)).toEqual(["遺言の聴取"]);
+  });
+
+  it("鬼録の看護師: 必殺のゴーストを出す。超進化時にもう1体。自分のターンに証拠の合算で消滅すると2回復", () => {
+    const { s, me } = setup({ turn: 7 });
+    s.players[me].leaderHp = 10;
+    const iid = toHand(s, me, "鬼録の看護師");
+    let t = play(s, iid);
+    expect(all(t, me, "ゴースト").map((g) => g.keywords.includes("bane"))).toEqual([true]);
+    t = superEvolve(t, iid);
+    expect(all(t, me, "ゴースト").map((g) => g.keywords.includes("bane"))).toEqual([true, true]);
+    toBoard(t, me, "神域の物証");
+    t.players[me].pp = 10;
+    t = play(t, toHand(t, me, "遺言の聴取"));
+    expect(t.players[me].leaderHp).toBe(12);
+  });
+
+  it("鬼録の看護師: 相手のターンに自分のカードが消滅しても回復しない", () => {
+    const { s, me, opp } = setup();
+    toBoard(s, me, "鬼録の看護師");
+    let t = endTurn(s);
+    t.players[me].leaderHp = 10;
+    const g = toBoard(t, me, "ゴースト");
+    const a = toBoard(t, opp, FEATHER);
+    t = applyAction(t, { type: "attack", attacker: a.iid, target: g.iid });
+    expect(find(t, me, "ゴースト")).toBeUndefined();
+    expect(t.players[me].leaderHp).toBe(10);
+  });
+});
+
+describe("第10弾: その他のカード", () => {
+  it("ソウルランナウェイ: 『ゴースト』を手札に加える", () => {
+    const { s, me } = setup();
+    const t = play(s, toHand(s, me, "ソウルランナウェイ"));
+    expect(handNames(t, me)).toEqual(["ゴースト"]);
+  });
+
+  it("ドゥームズチェンジ・グレモリー: ラストワードのネクロマンス_2 で1枚引く（墓場が足りなければ引かない）", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "ドゥームズチェンジ・グレモリー");
+    s.players[me].graveyard = 2;
+    const t = play(s, toHand(s, me, "渇命の破壊者"));
+    expect(all(t, me, "ドゥームズチェンジ・グレモリー").length).toBe(0);
+    expect(t.players[me].hand.length).toBe(1);
+    const u = setup();
+    toBoard(u.s, u.me, "ドゥームズチェンジ・グレモリー");
+    u.s.players[u.me].graveyard = 0;
+    const t2 = play(u.s, toHand(u.s, u.me, "渇命の破壊者"));
+    expect(t2.players[u.me].hand.length).toBe(0);
+  });
+
+  it("ドゥームズチェンジ・グレモリー: 進化時にクレスト。自分のターン終了時に墓場+2", () => {
+    const { s, me } = setup({ turn: 5 });
+    const d = toBoard(s, me, "ドゥームズチェンジ・グレモリー");
+    let t = evolve(s, d.iid);
+    expect(crestIds(t, me)).toEqual(["11054122"]);
+    const g = t.players[me].graveyard;
+    t = endTurn(t);
+    expect(t.players[me].graveyard).toBe(g + 2);
+  });
+
+  it("リベンジゴート: ラストワードで自分のリーダーに2ダメージ", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "リベンジゴート");
+    const t = play(s, toHand(s, me, "渇命の破壊者"));
+    expect(all(t, me, "リベンジゴート").length).toBe(0);
+    expect(t.players[me].leaderHp).toBe(18);
+  });
+
+  it("レスティブケンタウロス: 攻撃時、ネクロマンス_4 で相手のフォロワーすべてに4ダメージ", () => {
+    const { s, me, opp } = setup();
+    s.players[me].graveyard = 4;
+    const k = toBoard(s, me, "レスティブケンタウロス");
+    const a = toBoard(s, opp, FEATHER);
+    const b = toBoard(s, opp, FEATHER, { defense: 8 });
+    const t = applyAction(s, { type: "attack", attacker: k.iid, target: a.iid });
+    expect(t.players[me].graveyard).toBe(0);
+    expect(board(t, opp).some((c) => c.iid === a.iid)).toBe(false);
+    expect((board(t, opp).find((c) => c.iid === b.iid) as FollowerOnBoard).defense).toBe(4);
+  });
+
+  it("レスティブケンタウロス: 墓場が4未満なら攻撃時の能力は働かない", () => {
+    const { s, me, opp } = setup();
+    const k = toBoard(s, me, "レスティブケンタウロス");
+    toBoard(s, opp, FEATHER);
+    const c = toBoard(s, opp, FEATHER);
+    const t = applyAction(s, { type: "attack", attacker: k.iid, target: c.iid });
+    expect((board(t, opp)[0] as FollowerOnBoard).defense).toBe(4);
   });
 });

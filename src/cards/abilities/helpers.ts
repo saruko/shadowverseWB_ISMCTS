@@ -73,8 +73,12 @@ export const onOpponentTurnEnd = (...effects: Effect[]) => ability({ on: "turnEn
 export const onAllyEnter = (filter: CardFilter, ...effects: Effect[]) => ability({ on: "allyEnter", filter }, effects);
 export const act = (cost: number, ...effects: Effect[]) => ability({ on: "act", cost }, effects);
 export const onAllyAct = (...effects: Effect[]) => ability({ on: "allyAct" }, effects);
+/** 自分が証拠・アミュレットを【アクト】したとき（第10弾） */
+export const onEvidenceAct = (...effects: Effect[]) => ability({ on: "allyAct", filter: { evidence: true } }, effects);
 export const onFused = (...effects: Effect[]) => ability({ on: "fused" }, effects);
 export const onAllyFuse = (...effects: Effect[]) => ability({ on: "allyFuse" }, effects);
+/** 自分がアミュレットを【融合】したとき（素材にアミュレットがある。第10弾） */
+export const onAmuletFuse = (...effects: Effect[]) => ability({ on: "allyFuse", filter: { type: "amulet" } }, effects);
 export const onSpellboost = (...effects: Effect[]) => ability({ on: "spellboost" }, effects);
 export const onAllyLeaveInHand = (...effects: Effect[]) => ability({ on: "allyLeaveInHand" }, effects);
 export const onDiscarded = (...effects: Effect[]) => ability({ on: "discarded" }, effects);
@@ -103,7 +107,7 @@ export const addToHand = (name: string, count: Value = 1): Effect => ({ op: "add
 export const summon = (name: string, count: Value = 1, name2?: string): Effect =>
   name2 ? { op: "summon", cardId: id(name), count, slot: name2 } : { op: "summon", cardId: id(name), count };
 export const returnToDeck = (target: Target): Effect => ({ op: "returnToDeck", target });
-export const discard = (target: Target): Effect => ({ op: "discard", target });
+export const discard = (target: Target, countVar?: string): Effect => (countVar ? { op: "discard", target, countVar } : { op: "discard", target });
 export const transform = (target: Target, name: string): Effect => ({ op: "transform", target, cardId: id(name) });
 
 export const buff = (target: Target, attack: Value, defense: Value, duration?: Duration): Effect =>
@@ -253,6 +257,29 @@ export const addGauge = (target: Target, amount = 1): Effect => ({ op: "addGauge
 export const opponentDraws = (count: Value): Effect => ({ op: "draw", count, side: "opponent" });
 export const drawAs = (count: Value, slotName: string, filter?: CardFilter): Effect =>
   filter ? { op: "draw", count, filter, slot: slotName } : { op: "draw", count, slot: slotName };
+
+// ---- 第10弾（docs/rules.md 12章） ----
+/** 証拠・アミュレット */
+export const EVIDENCE_AMULET: CardFilter = { type: "amulet", evidence: true };
+/** 自分の場の証拠の数 */
+export const EVIDENCE: Value = { kind: "evidence" };
+/** 「自分の場の証拠を-N（して、…）」（足りなければ何も起きず、後の能力も働かない。0 になったら破壊） */
+export const spendEvidence = (amount: number, ...then: Effect[]): Effect => ({ op: "spendEvidence", amount, then });
+/** これが場で消滅したとき */
+export const onBanished = (...effects: Effect[]) => ability({ on: "banished" }, effects);
+/** 自分の（side の）カードが場で消滅したとき */
+export const onAllyBanished = (filter: CardFilter, ...effects: Effect[]) => ability({ on: "allyBanished", filter }, effects);
+export const onBanishedSide = (side: Side, filter: CardFilter, ...effects: Effect[]) => ability({ on: "allyBanished", filter, side }, effects);
+/** このターン中に自分がアミュレット（evidence なら証拠・アミュレット）を【アクト】していた */
+export const actedThisTurn = (evidence = false): Condition => (evidence ? { kind: "actedThisTurn", evidence } : { kind: "actedThisTurn" });
+export const swapStats = (target: Target = THIS): Effect => ({ op: "swapStats", target });
+export const setStats = (target: Target, attack: Value, defense: Value): Effect => ({ op: "setStats", target, attack, defense });
+export const halveLeaderMaxHp = (side: Side = "opponent"): Effect => ({ op: "halveLeaderMaxHp", side });
+export const minCost = (of: Target): Target => ({ kind: "minCost", of });
+export const sameName = (of: Target, slotName = "t"): Target => ({ kind: "sameName", of, slot: slotName });
+export const maxAttack = (of: Target): Target => ({ kind: "maxAttack", of });
+export const THIS_DEFENSE: Value = { kind: "thisDefense" };
+export const leaderMissingHp = (side: Side = "opponent"): Value => ({ kind: "leaderMissingHp", side });
 
 // 条件
 export const ULTIMATE: Condition = { kind: "ultimate", atLeast: 10 };

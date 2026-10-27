@@ -13,6 +13,7 @@ import {
   THIS_ATTACK,
   THIS_X,
   ULTIMATE,
+  actedThisTurn,
   addFaith,
   addSigils,
   addToDeck,
@@ -26,6 +27,7 @@ import {
   crest,
   crestIdOf,
   crestsOf,
+  cycleEffects,
   damage,
   destroy,
   discard,
@@ -36,6 +38,7 @@ import {
   evolveIt,
   fanfare,
   fromZone,
+  gainEp,
   gainPp,
   grant,
   grantAttacks,
@@ -47,6 +50,7 @@ import {
   lastWords,
   mode,
   modeAll,
+  onAllyAct,
   onAllyAttack,
   onAllyEnter,
   onAllyPlay,
@@ -108,6 +112,14 @@ const earthRiteMode = (n: number, ...options: Effect[][]): Effect =>
 const littleBeast: Effect[] = [choose(oppFollowers()), damage(slot(), 1), addSigils(1)];
 const greenJoy: Effect[] = [choose(oppFollowers()), damage(slot(), 1), spellboost(handCards(), 1)];
 const sweetEntity: Effect[] = [earthRiteMode(1, [damage(oppFollowers(), 3)], [draw(2)])];
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」で使う部品 ----
+/** 相手の場のフォロワーからランダム1枚に n ダメージ */
+const randomHit = (n: number): Effect[] => [random(oppFollowers(), 1, "r"), damage(slot("r"), n)];
+/** 『神域の物証』1枚を自分の場に出す */
+const evidenceIn: Effect = summon("神域の物証");
+/** テンペストルーラー:【土の秘術_1】『ガーディアンゴーレム』1枚を自分の場に出す（【進化時】も同じ） */
+const tempestRuler: Effect[] = [earthRite(1, summon("ガーディアンゴーレム"))];
 
 export const WITCH_ROT: Record<string, CardAbilities> = {
   // ---- 第4弾 ----
@@ -378,6 +390,40 @@ export const WITCH_ROT: Record<string, CardAbilities> = {
   },
   [id("破式の変貌・フィーリン")]: { abilities: [cheaper] },
 
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  [id("謎解く旋律")]: { abilities: [spell(evidenceIn, when(actedThisTurn(), randomHit(3)))] },
+  [id("トリックウィッチ")]: {
+    // （1）は土の印が足りなくても選べる（選んだ能力の中で土の秘術し、足りなければ何も起きない。推定）
+    abilities: [fanfare(mode([earthRite(1, ...randomHit(2))], [addSigils(2)]))],
+  },
+  [id("ノインハウエルの尋問")]: { abilities: [spell(addToHand("神域の物証"), crest("ノインハウエルの尋問"))] },
+  // 「自分がアミュレットを【アクト】したとき」は証拠に限らない（onAllyAct）
+  [id("砕心の小使")]: { abilities: [fanfare(evidenceIn), onAllyAct(buff(THIS, 1, 1))] },
+  [id("工房の引っ越し")]: {
+    abilities: [spell(summon("クレイゴーレム", 3, "s"), when(ENHANCED, [grant(slot("s"), ["storm"])]))],
+  },
+  [id("ボアードカウンセラー")]: {
+    abilities: [inHand(onAllyAct(costChange(THIS, -1))), fanfare(evidenceIn), onAllyAct(heal(1))],
+  },
+  [id("迷歌探偵・ノインハウエル")]: {
+    abilities: [fanfare(evidenceIn), onAllyAct(...randomHit(3)), onEvolve(crest("迷歌探偵・ノインハウエル"))],
+  },
+  [id("歌劇の助手")]: {
+    abilities: [fanfare(summon("砕心の小使")), onAllyAct(...randomHit(5)), onEvolve(gainPp(1))],
+  },
+  [id("テンペストルーラー")]: {
+    // 自身の【ファンファーレ】【進化時】で出した『ガーディアンゴーレム』でも働く
+    abilities: [
+      fanfare(...tempestRuler),
+      onAllyEnter({ type: "follower", tribe: "ゴーレム" }, ...randomHit(3)),
+      onEvolve(...tempestRuler),
+    ],
+  },
+  [id("劫焔のキマイラ")]: {
+    // フォロワーに（古い順に体力の分だけ）割り当てた残りを、相手のリーダーに与える（docs/rules.md 11章「割りふりの余り」⚠️）
+    abilities: [fanfare(distribute(union(oppFollowers(), OPP_LEADER), SIGILS))],
+  },
+
   // ---- トークン ----
   [id("マナリアの魔弾")]: { abilities: [spell(random(oppFollowers(), 1, "r"), damage(slot("r"), 3))] },
   [id("アルス・マグナ")]: {
@@ -424,4 +470,11 @@ export const WITCH_ROT_CRESTS: Record<string, CardAbilities> = {
   [crestIdOf("万術の咎人・セフィー")]: {
     abilities: [oncePerOwnTurn(onAllyEnter(SUBJECT, grant(EVENT, ["storm"])))],
   },
+
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  // 「順に1つの働いていない能力」は cycleEffects（（3）でこれを破壊するので一巡しない）。「これ」はクレスト自身（THIS）
+  [crestIdOf("ノインハウエルの尋問")]: {
+    abilities: [onAllyAct(cycleEffects(randomHit(3), [heal(2)], [gainEp(1), destroy(THIS)]))],
+  },
+  [crestIdOf("迷歌探偵・ノインハウエル")]: { abilities: [oncePerOwnTurn(onAllyAct(gainPp(1)))] },
 };

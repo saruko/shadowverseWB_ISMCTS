@@ -164,6 +164,9 @@ fn board_key(k: &mut LethalKey, c: &OnBoard, ignore_exhausted_stats: bool) {
         push_opt(k, c.countdown);
         push_opt(k, c.sigils);
         k.push(c.acted_this_turn as i32);
+        if let Some(n) = c.evidence {
+            k.push(n);
+        }
         granted(k);
         return;
     }

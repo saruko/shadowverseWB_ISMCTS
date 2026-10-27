@@ -655,6 +655,223 @@ describe("第9弾", () => {
   });
 });
 
+// ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+
+/** 自分の場に『神域の物証』（証拠の数1）を置いて【アクト】する（PP1。1枚引いて証拠を-1するので物証は破壊される） */
+function actEvidence(s: GameState, p: PlayerIndex): GameState {
+  const a = toBoard(s, p, "神域の物証");
+  return applyAction(s, { type: "act", iid: a.iid });
+}
+const evidenceCount = (s: GameState, p: PlayerIndex) =>
+  (board(s, p).find((c) => c.kind === "amulet" && c.evidence !== undefined) as AmuletOnBoard | undefined)?.evidence ?? 0;
+const evidenceOnBoard = (s: GameState, p: PlayerIndex) =>
+  board(s, p).find((c) => c.kind === "amulet" && c.evidence !== undefined)!;
+
+describe("第10弾", () => {
+  it("謎解く旋律: 『神域の物証』を場に出す。このターンにアミュレットを【アクト】していたら、ランダム1枚に3ダメージ", () => {
+    {
+      const { s, me, opp } = setup();
+      const e = toBoard(s, opp, "キャラバンマンモス");
+      const t = play(s, toHand(s, me, "謎解く旋律"));
+      expect(evidenceCount(t, me)).toBe(1);
+      expect(follower(t, e.iid)?.defense).toBe(10);
+    }
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, "キャラバンマンモス");
+    let t = actEvidence(s, me);
+    t = play(t, toHand(t, me, "謎解く旋律"));
+    expect(evidenceCount(t, me)).toBe(1);
+    expect(follower(t, e.iid)?.defense).toBe(7);
+  });
+
+  it("トリックウィッチ: （1）【土の秘術_1】ランダム1枚に2ダメージ（土の印が無ければ何も起きない）／（2）土の印を+2", () => {
+    {
+      const { s, me, opp } = setup();
+      sigils(s, me, 1);
+      const e = toBoard(s, opp, "キャラバンマンモス");
+      const t = play(s, toHand(s, me, "トリックウィッチ"), 0);
+      expect(follower(t, e.iid)?.defense).toBe(8);
+      expect(sigilCount(t, me)).toBe(0);
+    }
+    {
+      const { s, me, opp } = setup();
+      const e = toBoard(s, opp, "キャラバンマンモス");
+      const t = play(s, toHand(s, me, "トリックウィッチ"), 0);
+      expect(follower(t, e.iid)?.defense).toBe(10);
+    }
+    const { s, me } = setup();
+    const t = play(s, toHand(s, me, "トリックウィッチ"), 1);
+    expect(sigilCount(t, me)).toBe(2);
+  });
+
+  it("ノインハウエルの尋問: 『神域の物証』を手札に加え、クレストを持つ", () => {
+    const { s, me } = setup();
+    const t = play(s, toHand(s, me, "ノインハウエルの尋問"));
+    expect(handNames(t, me)).toEqual(["神域の物証"]);
+    expect(crestNames(t, me)).toEqual(["クレスト：ノインハウエルの尋問"]);
+  });
+
+  it("クレスト：ノインハウエルの尋問: アクトのたびに（1）3ダメージ→（2）2回復→（3）EP+1してクレストを破壊", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, "キャラバンマンモス");
+    s.players[me].leaderHp = 10;
+    s.players[me].ep = 0;
+    let t = play(s, toHand(s, me, "ノインハウエルの尋問"));
+    t = actEvidence(t, me);
+    expect(follower(t, e.iid)?.defense).toBe(7);
+    expect(t.players[me].leaderHp).toBe(10);
+    t = actEvidence(t, me);
+    expect(t.players[me].leaderHp).toBe(12);
+    expect(follower(t, e.iid)?.defense).toBe(7);
+    expect(crestNames(t, me)).toEqual(["クレスト：ノインハウエルの尋問"]);
+    t = actEvidence(t, me);
+    expect(t.players[me].ep).toBe(1);
+    expect(crestNames(t, me)).toEqual([]);
+    // 破壊された後はアクトしても何も起きない
+    t = actEvidence(t, me);
+    expect(follower(t, e.iid)?.defense).toBe(7);
+    expect(t.players[me].leaderHp).toBe(12);
+  });
+
+  it("クレスト：ノインハウエルの尋問: 2つ持つと、それぞれが順に働き、（3）ではそれ自身だけが破壊される", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, "キャラバンマンモス");
+    s.players[me].leaderHp = 10;
+    s.players[me].ep = 0;
+    let t = play(s, toHand(s, me, "ノインハウエルの尋問"));
+    // 1つ目が（1）を済ませた後に2つ目を持つ
+    t = actEvidence(t, me);
+    expect(follower(t, e.iid)?.defense).toBe(7);
+    t = play(t, toHand(t, me, "ノインハウエルの尋問"));
+    expect(t.players[me].crests.length).toBe(2);
+    // 1つ目は（2）、2つ目は（1）
+    t = actEvidence(t, me);
+    expect(t.players[me].leaderHp).toBe(12);
+    expect(follower(t, e.iid)?.defense).toBe(4);
+    // 1つ目は（3）で破壊（2つ目は残る）、2つ目は（2）
+    t = actEvidence(t, me);
+    expect(t.players[me].ep).toBe(1);
+    expect(t.players[me].leaderHp).toBe(14);
+    expect(t.players[me].crests.length).toBe(1);
+    // 2つ目が（3）で破壊
+    t = actEvidence(t, me);
+    expect(t.players[me].ep).toBe(2);
+    expect(t.players[me].crests.length).toBe(0);
+  });
+
+  it("砕心の小使: 『神域の物証』を場に出す。アミュレットを【アクト】したとき+1/+1", () => {
+    const { s, me } = setup();
+    const k = toHand(s, me, "砕心の小使");
+    let t = play(s, k);
+    expect(evidenceCount(t, me)).toBe(1);
+    expect(follower(t, k)?.keywords).toContain("ward");
+    t = applyAction(t, { type: "act", iid: evidenceOnBoard(t, me).iid });
+    expect(follower(t, k)).toMatchObject({ attack: 4, defense: 4 });
+  });
+
+  it("工房の引っ越し: 『クレイゴーレム』3枚。【エンハンス_8】なら疾走を持つ", () => {
+    {
+      const { s, me } = setup();
+      const t = play(s, toHand(s, me, "工房の引っ越し"));
+      const gs = byName(t, me, "クレイゴーレム");
+      expect(gs.length).toBe(3);
+      expect(gs.every((g) => g.keywords.includes("storm"))).toBe(true);
+    }
+    const { s, me } = setup();
+    s.players[me].pp = 4;
+    const t = play(s, toHand(s, me, "工房の引っ越し"));
+    const gs = byName(t, me, "クレイゴーレム");
+    expect(gs.length).toBe(3);
+    expect(gs.some((g) => g.keywords.includes("storm"))).toBe(false);
+  });
+
+  it("ボアードカウンセラー: 手札でアクトのたびにコスト-1。場ではアクトのたびに自分を1回復", () => {
+    const { s, me } = setup();
+    s.players[me].leaderHp = 10;
+    const b = toHand(s, me, "ボアードカウンセラー");
+    let t = actEvidence(s, me);
+    expect(handCost(hand(t, me, b))).toBe(3);
+    expect(t.players[me].leaderHp).toBe(10);
+    t = play(t, b);
+    expect(evidenceCount(t, me)).toBe(1);
+    t = applyAction(t, { type: "act", iid: evidenceOnBoard(t, me).iid });
+    expect(t.players[me].leaderHp).toBe(11);
+  });
+
+  it("迷歌探偵・ノインハウエル: アクトのたびにランダム1枚に3ダメージ。進化でクレスト（アクトしたとき自分のターンごとに1回PP+1）", () => {
+    const { s, me, opp } = setup({ turn: 5 });
+    ready(s, me);
+    const e = toBoard(s, opp, "キャラバンマンモス");
+    const n = toHand(s, me, "迷歌探偵・ノインハウエル");
+    let t = play(s, n);
+    expect(evidenceCount(t, me)).toBe(1);
+    t = applyAction(t, { type: "act", iid: evidenceOnBoard(t, me).iid });
+    expect(follower(t, e.iid)?.defense).toBe(7);
+    t = applyAction(t, { type: "evolve", iid: n });
+    expect(crestNames(t, me)).toEqual(["クレスト：迷歌探偵・ノインハウエル"]);
+    const pp = t.players[me].pp;
+    // アクトの PP1 をクレストで回復する
+    t = actEvidence(t, me);
+    expect(t.players[me].pp).toBe(pp);
+    expect(follower(t, e.iid)?.defense).toBe(4);
+    // 同じターンの2回目は回復しない
+    t = actEvidence(t, me);
+    expect(t.players[me].pp).toBe(pp - 1);
+  });
+
+  it("歌劇の助手: 『砕心の小使』を出す。アクトのたびにランダム1枚に5ダメージ。進化時にPP+1", () => {
+    const { s, me, opp } = setup({ turn: 5 });
+    ready(s, me);
+    const e = toBoard(s, opp, "キャラバンマンモス");
+    const a = toHand(s, me, "歌劇の助手");
+    let t = play(s, a);
+    // 出した『砕心の小使』のファンファーレは働かない（プレイではない）
+    expect(names(t, me)).toEqual(["歌劇の助手", "砕心の小使"]);
+    const k = byName(t, me, "砕心の小使")[0]!;
+    t = actEvidence(t, me);
+    expect(follower(t, e.iid)?.defense).toBe(5);
+    expect(follower(t, k.iid)).toMatchObject({ attack: 4, defense: 4 });
+    const pp = t.players[me].pp;
+    t = applyAction(t, { type: "evolve", iid: a });
+    expect(t.players[me].pp).toBe(pp + 1);
+  });
+
+  it("テンペストルーラー: 【土の秘術_1】でガーディアンゴーレム。ゴーレムが出るたびにランダム1枚に3ダメージ。進化時も同じ", () => {
+    const { s, me, opp } = setup({ turn: 5 });
+    ready(s, me);
+    sigils(s, me, 2);
+    const e = toBoard(s, opp, "キャラバンマンモス");
+    const r = toHand(s, me, "テンペストルーラー");
+    let t = play(s, r);
+    expect(byName(t, me, "ガーディアンゴーレム").length).toBe(1);
+    expect(sigilCount(t, me)).toBe(1);
+    expect(follower(t, e.iid)?.defense).toBe(7);
+    t = applyAction(t, { type: "evolve", iid: r });
+    expect(byName(t, me, "ガーディアンゴーレム").length).toBe(2);
+    expect(sigilCount(t, me)).toBe(0);
+    expect(follower(t, e.iid)?.defense).toBe(4);
+    // 他の能力で出たゴーレムでも働く（場は満杯にならないよう2枚だけ出す）
+    t.players[me].pp = 10;
+    const clay = toHand(t, me, "クレイゴーレム");
+    t = play(t, clay);
+    expect(follower(t, e.iid)?.defense).toBe(1);
+  });
+
+  it("劫焔のキマイラ: 土の印の数を相手のフォロワーと相手のリーダーに割りふる（フォロワーに割り当てた残りはリーダーに）", () => {
+    const { s, me, opp } = setup();
+    sigils(s, me, 6);
+    const g = toBoard(s, opp, "ガーディアンゴーレム");
+    const c = toBoard(s, opp, "クレイゴーレム");
+    const t = play(s, toHand(s, me, "劫焔のキマイラ"));
+    expect(follower(t, g.iid)).toBeUndefined();
+    expect(follower(t, c.iid)).toBeUndefined();
+    // 土の印は減らない
+    expect(sigilCount(t, me)).toBe(6);
+    // フォロワーに割り当てた残り（6 − 体力の合計 5 = 1）は相手のリーダーに
+    expect(t.players[opp].leaderHp).toBe(19);
+  });
+});
+
 describe("トークン", () => {
   it("アルス・マグナ: 相手のリーダーも選べる。自分を1回復", () => {
     const { s, me, opp } = setup();

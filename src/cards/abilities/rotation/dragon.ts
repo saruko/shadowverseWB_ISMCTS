@@ -6,6 +6,7 @@ import {
   AWAKENED,
   ENHANCED,
   EVENT,
+  EVIDENCE_AMULET,
   OPP_LEADER,
   RELEASED_ULTIMATE,
   SELF_LEADER,
@@ -46,8 +47,11 @@ import {
   id,
   inHand,
   lastWords,
+  leaderMissingHp,
+  leftmost,
   loseLastWords,
   mode,
+  modePick,
   onAllyAttack,
   onAllyEnter,
   onAllySuperEvolve,
@@ -86,6 +90,9 @@ const WILNAS: Effect[] = [choose(oppFollowers()), damage(slot(), 8)];
 const SHADAN: Effect[] = [choose(handCards()), discard(slot()), random(oppFollowers(), 1, "r"), damage(slot("r"), 6)];
 const KIMIKA: Effect[] = [choose(handCards()), discard(slot()), draw(1), heal(1)];
 const NOMAGDARA: Effect[] = [mode([draw(1), heal(3)], [buff(oppFollowers(), 0, -4)])];
+
+/** 自分の手札に証拠・アミュレットがあるなら、その中のランダム1枚を捨てる（第10弾。無ければ何もしない） */
+const DISCARD_EVIDENCE: Effect[] = [random(handCards(EVIDENCE_AMULET), 1, "e"), discard(slot("e"))];
 
 export const DRAGON_ROT: Record<string, CardAbilities> = {
   // ---- 第4弾 ----
@@ -372,6 +379,68 @@ export const DRAGON_ROT: Record<string, CardAbilities> = {
     ignoreWard: true,
   },
   [id("禁牙の変貌・ノマグダラ")]: { abilities: [fanfare(...NOMAGDARA), onEvolve(...NOMAGDARA)] },
+
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  [id("天喰の暴行者")]: { abilities: [lastWords(addToHand("神域の物証"))] },
+  [id("蒐集の発露")]: {
+    // 証拠・アミュレットを捨てられなくても（手札に無くても）、引く効果は働く
+    abilities: [
+      spell(random(oppFollowers(), 1, "r"), damage(slot("r"), 4), ...DISCARD_EVIDENCE, draw(1, { originalCostMin: 5 })),
+    ],
+  },
+  [id("アイシクルリザード")]: {
+    abilities: [
+      fanfare(
+        when(
+          ENHANCED,
+          [repeat(3, random(oppFollowers(), 1, "r"), damage(slot("r"), 3)), buff(THIS, 5, 5)],
+          [random(oppFollowers(), 1, "r"), damage(slot("r"), 3)],
+        ),
+      ),
+    ],
+  },
+  [id("水竜神の慈雨")]: { abilities: [spell(draw(1), heal(1), when(AWAKENED, [addMaxPp(1)]))] },
+  [id("偵察のドラゴニュート")]: {
+    // 進化前（進化・超進化していない）の自分の他のフォロワー。効果による進化なので EP は使わない
+    abilities: [onAttack(random(otherAllyFollowers({ notEvolved: true }), 1, "r"), evolveIt(slot("r")))],
+  },
+  [id("俯瞰の眼差し")]: {
+    // 選んだ2つは（1）（2）…の順に働く（（1）と（2）なら出した『好奇のネズミ』も「左から2枚」に数える）
+    abilities: [
+      spell(
+        modePick(
+          2,
+          [summon("好奇のネズミ")],
+          [buff(leftmost(allyFollowers(), 2), 1, 0)],
+          [addToHand("神域の物証", 3)],
+          [random(oppFollowers(), 1, "r"), damage(slot("r"), 4)],
+        ),
+      ),
+    ],
+  },
+  [id("天喰の強奪犯")]: {
+    // PP最大値の+1は、証拠・アミュレットを捨てたかによらず働く
+    abilities: [fanfare(...DISCARD_EVIDENCE, addMaxPp(1)), onEvolve(choose(oppFollowers()), damage(slot(), 3))],
+  },
+  [id("ドラゴニックフィアー・ギルヴァ")]: {
+    // X はファンファーレが働いたときの値
+    abilities: [
+      fanfare(distribute(oppFollowers(), leaderMissingHp("opponent"))),
+      onSuperEvolve(grant(THIS, ["storm", "ward"])),
+    ],
+  },
+  [id("天喰の運び屋")]: {
+    abilities: [fanfare(choose(oppFollowers(), 2), destroy(slot()), addToHand("神域の物証", 2))],
+  },
+  [id("天喰の三悪・ライトオフ")]: {
+    abilities: [
+      fanfare(
+        banish(deckCards({ originalCostMax: 4 })),
+        discard(handCards(EVIDENCE_AMULET), "n"),
+        repeat(v("n"), random(oppFollowers(), 1, "r"), damage(slot("r"), 8)),
+      ),
+    ],
+  },
 
   // ---- トークン ----
   [id("天刀の深淵")]: {

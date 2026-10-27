@@ -29,6 +29,8 @@ export interface CardFilter {
   /** 【土の印】アミュレット */
   earthSigil?: boolean;
   // ---- ローテーションで足した条件（docs/rules.md 12章） ----
+  /** 【証拠】アミュレット（証拠・アミュレット。第10弾） */
+  evidence?: boolean;
   costMin?: number;
   /** コストがこのいずれか */
   costIn?: number[];
@@ -75,7 +77,11 @@ export type Target =
   | { kind: "event" }
   | { kind: "union"; of: Target[] }
   /** 攻撃力が最大のものに絞る */
-  | { kind: "maxAttack"; of: Target };
+  | { kind: "maxAttack"; of: Target }
+  /** コストが最小のものに絞る（手札は今のコスト。第10弾） */
+  | { kind: "minCost"; of: Target }
+  /** スロットのカード（先頭）と同名のものに絞る（第10弾） */
+  | { kind: "sameName"; of: Target; slot: string };
 
 /** 数値 */
 export type Value =
@@ -104,7 +110,14 @@ export type Value =
   /** このバトル中に場に出た自分のフォロワーのうち条件に合う枚数（filter.excludeSelf ならこれを除く） */
   | { kind: "enteredCount"; filter?: CardFilter }
   /** 同じく、その種類の数 */
-  | { kind: "enteredKinds"; filter?: CardFilter };
+  | { kind: "enteredKinds"; filter?: CardFilter }
+  // ---- 第10弾で足した値（docs/rules.md 12章） ----
+  /** 自分の場の証拠の数（無ければ 0） */
+  | { kind: "evidence" }
+  /** これの体力 */
+  | { kind: "thisDefense" }
+  /** リーダーの体力の最大値 − 体力 */
+  | { kind: "leaderMissingHp"; side: Side };
 
 export type CardStat = "attack" | "defense" | "cost" | "originalCost";
 
@@ -148,7 +161,9 @@ export type Condition =
   | { kind: "handTopCostGreater"; n: number }
   /** エンハンスで atLeast 以上の PP を払った（エンハンスが複数あるカード） */
   | { kind: "enhancedAtLeast"; atLeast: number }
-  | { kind: "and"; conds: Condition[] };
+  | { kind: "and"; conds: Condition[] }
+  /** このターン中に自分がアミュレット（evidence なら証拠・アミュレット）を【アクト】していた（第10弾） */
+  | { kind: "actedThisTurn"; evidence?: boolean };
 
 export type Duration = "permanent" | "endOfTurn" | "untilOpponentTurnEnd";
 
@@ -191,7 +206,7 @@ export type Effect =
   /** このバトル中に破壊された自分の元のコスト最大のアミュレットからランダム1枚と同名のカードを場に出す */
   | { op: "summonDestroyedAmulet" }
   | { op: "returnToDeck"; target: Target; countVar?: string }
-  | { op: "discard"; target: Target }
+  | { op: "discard"; target: Target; countVar?: string }
   | { op: "transform"; target: Target; cardId?: string; from?: CardSource }
   // 能力値・能力の付与
   | { op: "buff"; target: Target; attack: Value; defense: Value; duration?: Duration }
@@ -279,7 +294,16 @@ export type Effect =
     }
   | { op: "addLeaderMaxHp"; side: Side; amount: number }
   /** 手札のカードの奥義ゲージを +amount */
-  | { op: "addGauge"; target: Target; amount: number };
+  | { op: "addGauge"; target: Target; amount: number }
+  // ---- 第10弾で足した効果（docs/rules.md 12章） ----
+  /** 自分の場の証拠を amount 減らして then（足りなければ何も起きない。0 になったら破壊） */
+  | { op: "spendEvidence"; amount: number; then: Effect[] }
+  /** 攻撃力と体力を入れ替える（場・手札のフォロワー） */
+  | { op: "swapStats"; target: Target }
+  /** 攻撃力と体力をこの値にする */
+  | { op: "setStats"; target: Target; attack: Value; defense: Value }
+  /** リーダーの体力の最大値を半分にする（端数は切り上げ） */
+  | { op: "halveLeaderMaxHp"; side: Side };
 
 export type Trigger =
   | { on: "fanfare" }
@@ -302,12 +326,12 @@ export type Trigger =
   | { on: "enter" }
   /** アクト（プレイヤーが起動する） */
   | { on: "act"; cost: number }
-  /** 自分がアミュレットをアクトしたとき */
-  | { on: "allyAct" }
+  /** 自分がアミュレットをアクトしたとき（filter があれば、アクトしたアミュレットがそれに合うときだけ） */
+  | { on: "allyAct"; filter?: CardFilter }
   /** これに融合したとき */
   | { on: "fused" }
-  /** 自分が融合したとき */
-  | { on: "allyFuse" }
+  /** 自分が融合したとき（filter があれば、素材にそれに合うカードがあるときだけ） */
+  | { on: "allyFuse"; filter?: CardFilter }
   /** 手札にある間、スペルブーストされたとき */
   | { on: "spellboost" }
   /** 手札にある間、自分のフォロワーが場を離れたとき */
@@ -336,7 +360,12 @@ export type Trigger =
   | { on: "superEvolved" }
   | { on: "directSummoned" }
   /** 自分が【土の秘術】したとき */
-  | { on: "earthRite" };
+  | { on: "earthRite" }
+  // ---- 第10弾で足した誘発（docs/rules.md 12章） ----
+  /** これが場で消滅したとき */
+  | { on: "banished" }
+  /** 自分の（side があればその側の）カードが場で消滅したとき（event は消滅したカード。これ自身は含まない） */
+  | { on: "allyBanished"; filter?: CardFilter; side?: Side };
 
 export interface Ability {
   trigger: Trigger;

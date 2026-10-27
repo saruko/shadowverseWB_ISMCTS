@@ -31,6 +31,8 @@ export interface StaticInfo {
   keywords: StaticKeyword[];
   maxAttacks: number;
   earthSigil: boolean;
+  /** 【証拠】アミュレット（第10弾） */
+  evidence: boolean;
 }
 
 const staticCache = new Map<string, StaticInfo>();
@@ -40,7 +42,8 @@ export function staticOf(cardId: string): StaticInfo {
   let info = staticCache.get(cardId);
   if (!info) {
     const text = cardOf(cardId).text;
-    info = { ...parseStaticAbilities(text), earthSigil: text.split("\n").includes("【土の印】") };
+    const lines = text.split("\n");
+    info = { ...parseStaticAbilities(text), earthSigil: lines.includes("【土の印】"), evidence: lines.includes("【証拠】") };
     staticCache.set(cardId, info);
   }
   return info;

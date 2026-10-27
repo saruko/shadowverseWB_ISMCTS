@@ -12,6 +12,8 @@ export interface Format {
   sets: readonly CardSet[];
   /** さらに、今のローテーションで使えるカード（Card.rotation）に限る */
   rotationOnly?: boolean;
+  /** sets の外で入れられるカード（カードID） */
+  extraIds?: readonly string[];
 }
 
 /** スターター: 第1弾とベーシックのみ。能力調整されたカードは当時の能力で扱う（cards.json 側で表現）。 */
@@ -32,9 +34,21 @@ export const ROTATION: Format = {
   rotationOnly: true,
 };
 
+/**
+ * 第9弾環境のローテーション（ベーシック＋第4〜9弾）。第10弾の追加で第4弾が外れる前のローテーション。
+ * それまでのローテーションのデッキ（data/decks-rotation-9）をこのフォーマットとして残す（ユーザー判断 2026-10-27）。
+ * ストームブラスト（第1弾）は、第9弾環境のローテーションでも使えたカード
+ */
+export const ROTATION_9: Format = {
+  id: "rotation-9",
+  name: "第9弾ローテーション",
+  sets: ["basic", "set_04", "set_05", "set_06", "set_07", "set_08", "set_09"],
+  extraIds: ["10131320"],
+};
+
 /** そのフォーマットのデッキに入れられるカードか */
 export function inFormat(format: Format, card: Card): boolean {
-  return format.sets.includes(card.set) && (!format.rotationOnly || card.rotation === true);
+  return (format.sets.includes(card.set) || format.extraIds?.includes(card.id) === true) && (!format.rotationOnly || card.rotation === true);
 }
 
 /** デッキ構築ルールに違反していれば理由の一覧を返す。空なら合法。 */

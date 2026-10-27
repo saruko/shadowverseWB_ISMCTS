@@ -683,3 +683,187 @@ describe("ドラゴン（ローテーション）", () => {
   });
 
 });
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+
+describe("ドラゴン（第10弾）", () => {
+  it("天喰の暴行者: 破壊されると『神域の物証』を手札に加える", () => {
+    let { s, me, opp } = setup();
+    const a = toBoard(s, me, "天喰の暴行者");
+    const t = toBoard(s, opp, "燃え滾る闘志・フェザー");
+    s = applyAction(s, { type: "attack", attacker: a.iid, target: t.iid });
+    expect(follower(s, a.iid)).toBeUndefined();
+    expect(handNames(s, me)).toEqual(["神域の物証"]);
+  });
+
+  it("蒐集の発露: 4ダメージ、手札の証拠・アミュレットからランダム1枚を捨て、元のコスト5以上を1枚引く", () => {
+    let { s, me, opp } = setup({ deck: ["大翼のドラゴン"] });
+    const t = toBoard(s, opp, "大翼のドラゴン");
+    toHand(s, me, "神域の物証");
+    toHand(s, me, "天喰の暴行者");
+    s = play(s, toHand(s, me, "蒐集の発露"));
+    expect(follower(s, t.iid)?.defense).toBe(1);
+    expect(handNames(s, me)).toEqual(["天喰の暴行者", "大翼のドラゴン"]);
+  });
+
+  it("蒐集の発露: 手札に証拠・アミュレットが無ければ何も捨てず、引く効果は働く", () => {
+    let { s, me } = setup({ deck: ["大翼のドラゴン"] });
+    toHand(s, me, "天喰の暴行者");
+    s = play(s, toHand(s, me, "蒐集の発露"));
+    expect(handNames(s, me)).toEqual(["天喰の暴行者", "大翼のドラゴン"]);
+  });
+
+  it("アイシクルリザード: 3ダメージを1回。エンハンス_7なら3回と+5/+5", () => {
+    let { s, me, opp } = setup();
+    const t = toBoard(s, opp, "大翼のドラゴン", { defense: 30, maxDefense: 30 });
+    s.players[me].pp = 3;
+    const a = toHand(s, me, "アイシクルリザード");
+    s = play(s, a);
+    expect(follower(s, t.iid)?.defense).toBe(27);
+    expect(follower(s, a)?.attack).toBe(2);
+
+    ({ s, me, opp } = setup());
+    const t2 = toBoard(s, opp, "大翼のドラゴン", { defense: 30, maxDefense: 30 });
+    const b = toHand(s, me, "アイシクルリザード");
+    s = play(s, b);
+    expect(follower(s, t2.iid)?.defense).toBe(21);
+    expect([follower(s, b)?.attack, follower(s, b)?.defense]).toEqual([7, 7]);
+  });
+
+  it("水竜神の慈雨: 1枚引いてリーダーを1回復。覚醒（PP最大値7以上）ならPP最大値+1", () => {
+    let { s, me } = setup();
+    s.players[me].pp = s.players[me].maxPp = 7;
+    s.players[me].leaderHp = 10;
+    s = play(s, toHand(s, me, "水竜神の慈雨"));
+    expect(s.players[me].hand.length).toBe(1);
+    expect(s.players[me].leaderHp).toBe(11);
+    expect(s.players[me].maxPp).toBe(8);
+
+    ({ s, me } = setup());
+    s.players[me].pp = s.players[me].maxPp = 6;
+    s = play(s, toHand(s, me, "水竜神の慈雨"));
+    expect(s.players[me].maxPp).toBe(6);
+  });
+
+  it("偵察のドラゴニュート: 攻撃時、自分の他の進化前のフォロワーからランダム1枚が進化する", () => {
+    let { s, me } = setup();
+    const d = toBoard(s, me, "偵察のドラゴニュート");
+    const done = toBoard(s, me, "燃え滾る闘志・フェザー", { evolve: "evolved" });
+    const f = toBoard(s, me, "燃え滾る闘志・フェザー");
+    const ep = s.players[me].ep;
+    s = applyAction(s, { type: "attack", attacker: d.iid, target: "leader" });
+    expect(follower(s, f.iid)?.evolve).toBe("evolved");
+    expect(follower(s, done.iid)?.evolve).toBe("evolved");
+    expect(follower(s, d.iid)?.evolve).toBe("none");
+    expect(s.players[me].ep).toBe(ep);
+  });
+
+  it("俯瞰の眼差し: （1）（2）なら『好奇のネズミ』を出してから、自分の場の左から2枚を+1/+0", () => {
+    let { s, me } = setup();
+    const a = toBoard(s, me, "燃え滾る闘志・フェザー");
+    const b = toBoard(s, me, "燃え滾る闘志・フェザー");
+    const c = toBoard(s, me, "燃え滾る闘志・フェザー");
+    // 組み合わせは（1）（2）、（1）（3）、（1）（4）、（2）（3）、（2）（4）、（3）（4）の順
+    s = play(s, toHand(s, me, "俯瞰の眼差し"), 0);
+    expect(names(s, me)).toEqual(["燃え滾る闘志・フェザー", "燃え滾る闘志・フェザー", "燃え滾る闘志・フェザー", "好奇のネズミ"]);
+    expect([a, b, c].map((x) => follower(s, x.iid)?.attack)).toEqual([6, 6, 5]);
+
+    ({ s, me } = setup());
+    const d = toBoard(s, me, "燃え滾る闘志・フェザー");
+    s = play(s, toHand(s, me, "俯瞰の眼差し"), 0);
+    const rat = board(s, me).find((x) => x.cardId === rid("好奇のネズミ"));
+    expect(follower(s, d.iid)?.attack).toBe(6);
+    // 好奇のネズミは 1/1（場に他の元のコスト1のカードは無い）
+    expect(rat && follower(s, rat.iid)?.attack).toBe(2);
+  });
+
+  it("俯瞰の眼差し: （3）（4）なら『神域の物証』3枚を手札に加え、ランダム1枚に4ダメージ", () => {
+    let { s, me, opp } = setup();
+    const t = toBoard(s, opp, "大翼のドラゴン", { defense: 9, maxDefense: 9 });
+    s = play(s, toHand(s, me, "俯瞰の眼差し"), 5);
+    expect(handNames(s, me)).toEqual(["神域の物証", "神域の物証", "神域の物証"]);
+    expect(follower(s, t.iid)?.defense).toBe(5);
+  });
+
+  it("天喰の強奪犯: 手札の証拠・アミュレット1枚を捨ててPP最大値+1。進化時に選んだフォロワーに3ダメージ", () => {
+    let { s, me, opp } = setup({ turn: 5 });
+    s.players[me].maxPp = 9;
+    toHand(s, me, "神域の物証");
+    toHand(s, me, "神域の物証");
+    const t = toBoard(s, opp, "大翼のドラゴン");
+    const r = toHand(s, me, "天喰の強奪犯");
+    s = play(s, r);
+    expect(handNames(s, me)).toEqual(["神域の物証"]);
+    expect(s.players[me].maxPp).toBe(10);
+    s = applyAction(s, { type: "evolve", iid: r });
+    expect(follower(s, t.iid)?.defense).toBe(2);
+  });
+
+  it("天喰の強奪犯: 手札に証拠・アミュレットが無くてもPP最大値+1", () => {
+    let { s, me } = setup();
+    s.players[me].maxPp = 9;
+    toHand(s, me, "天喰の暴行者");
+    s = play(s, toHand(s, me, "天喰の強奪犯"));
+    expect(handNames(s, me)).toEqual(["天喰の暴行者"]);
+    expect(s.players[me].maxPp).toBe(10);
+  });
+
+  it("ドラゴニックフィアー・ギルヴァ: 相手のリーダーの減った体力の分のダメージを割りふる。超進化時に疾走と守護", () => {
+    let { s, me, opp } = setup({ turn: 7 });
+    s.players[opp].leaderHp = s.players[opp].leaderMaxHp - 6;
+    const a = toBoard(s, opp, "大翼のドラゴン");
+    const b = toBoard(s, opp, "大翼のドラゴン");
+    const g = toHand(s, me, "ドラゴニックフィアー・ギルヴァ");
+    s = play(s, g);
+    expect(follower(s, a.iid)).toBeUndefined();
+    expect(follower(s, b.iid)?.defense).toBe(4);
+    expect(kw(s, g)).not.toContain("storm");
+    s = applyAction(s, { type: "superEvolve", iid: g });
+    expect(kw(s, g)).toContain("storm");
+    expect(kw(s, g)).toContain("ward");
+  });
+
+  it("ドラゴニックフィアー・ギルヴァ: 相手のリーダーの体力が減っていなければダメージは0", () => {
+    let { s, me, opp } = setup();
+    const a = toBoard(s, opp, "大翼のドラゴン");
+    s = play(s, toHand(s, me, "ドラゴニックフィアー・ギルヴァ"));
+    expect(follower(s, a.iid)?.defense).toBe(5);
+  });
+
+  it("天喰の運び屋: 相手のフォロワー2枚を選んで破壊し、『神域の物証』2枚を手札に加える", () => {
+    let { s, me, opp } = setup();
+    const a = toBoard(s, opp, "大翼のドラゴン");
+    const b = toBoard(s, opp, "大翼のドラゴン");
+    const c = toBoard(s, opp, "大翼のドラゴン");
+    const iid = toHand(s, me, "天喰の運び屋");
+    const t = applyAction(s, { type: "play", iid });
+    expect(t.pending?.kind).toBe("choose");
+    s = applyAction(t, { type: "choose", targets: [a.iid, c.iid] });
+    expect(board(s, opp).map((x) => x.iid)).toEqual([b.iid]);
+    expect(handNames(s, me)).toEqual(["神域の物証", "神域の物証"]);
+  });
+
+  it("天喰の三悪・ライトオフ: デッキの元のコスト4以下を消滅、手札の証拠・アミュレットすべてを捨て、その枚数だけ8ダメージ", () => {
+    let { s, me, opp } = setup({ deck: ["大翼のドラゴン", "黒炎の奔流"] });
+    const t = toBoard(s, opp, "大翼のドラゴン", { defense: 30, maxDefense: 30 });
+    toHand(s, me, "神域の物証");
+    toHand(s, me, "天喰の暴行者");
+    toHand(s, me, "神域の物証");
+    const grave = s.players[me].graveyard;
+    const l = toHand(s, me, "天喰の三悪・ライトオフ");
+    s = play(s, l);
+    expect(s.players[me].deck.map((d) => cardOf(d.cardId).name).sort()).toEqual(["大翼のドラゴン", "黒炎の奔流"].sort());
+    expect(handNames(s, me)).toEqual(["天喰の暴行者"]);
+    // 捨てた2枚は墓場へ（消滅したデッキのカードは墓場に行かない）
+    expect(s.players[me].graveyard).toBe(grave + 2);
+    expect(follower(s, t.iid)?.defense).toBe(14);
+    expect(kw(s, l)).toContain("storm");
+  });
+
+  it("天喰の三悪・ライトオフ: 手札に証拠・アミュレットが無ければダメージは無い", () => {
+    let { s, me, opp } = setup();
+    const t = toBoard(s, opp, "大翼のドラゴン");
+    s = play(s, toHand(s, me, "天喰の三悪・ライトオフ"));
+    expect(follower(s, t.iid)?.defense).toBe(5);
+  });
+});

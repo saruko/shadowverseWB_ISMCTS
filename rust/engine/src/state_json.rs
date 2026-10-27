@@ -326,6 +326,10 @@ fn board_json(c: &OnBoard) -> Json {
             ("sigils", opt_num(c.sigils)),
             ("actedThisTurn", Json::Bool(c.acted_this_turn)),
         ]);
+        // 証拠の数は証拠・アミュレットだけ書く（今までの局面の形を変えない）
+        if let Some(n) = c.evidence {
+            o.push(("evidence", num(n)));
+        }
     }
     if !c.ext.is_default() {
         let e = &c.ext;
@@ -350,7 +354,7 @@ fn board_json(c: &OnBoard) -> Json {
 }
 
 fn player_ext_json(e: &PlayerExt) -> Json {
-    obj(vec![
+    let mut o = vec![
         ("rotation", Json::Bool(e.rotation)),
         ("entered", cards(&e.entered)),
         ("evolvedCount", num(e.evolved_count)),
@@ -381,7 +385,15 @@ fn player_ext_json(e: &PlayerExt) -> Json {
                 .unwrap_or(Json::Null),
         ),
         ("leaderPlus", num(e.leader_plus)),
-    ])
+    ];
+    // 第10弾で足した項目は、使ったときだけ書く（今までの局面の形を変えない）
+    if e.acted_amulet_turn != 0 {
+        o.push(("actedAmuletTurn", num(e.acted_amulet_turn)));
+    }
+    if e.acted_evidence_turn != 0 {
+        o.push(("actedEvidenceTurn", num(e.acted_evidence_turn)));
+    }
+    obj(o)
 }
 
 fn player_json(p: &PlayerState) -> Json {
@@ -947,6 +959,15 @@ fn player_ext_of(e: &Json) -> R<PlayerExt> {
         faith,
         leader_cap,
         leader_plus: int(e, "leaderPlus")?,
+        // 第10弾で足した項目（無ければ 0）
+        acted_amulet_turn: match e.get("actedAmuletTurn") {
+            Some(_) => int(e, "actedAmuletTurn")?,
+            None => 0,
+        },
+        acted_evidence_turn: match e.get("actedEvidenceTurn") {
+            Some(_) => int(e, "actedEvidenceTurn")?,
+            None => 0,
+        },
     })
 }
 
@@ -976,6 +997,7 @@ fn board_of(v: &Json) -> R<OnBoard> {
         used_once: Vec::new(),
         countdown: None,
         sigils: None,
+        evidence: None,
         acted_this_turn: false,
         ext: BoardExt::default(),
     };
@@ -1017,6 +1039,10 @@ fn board_of(v: &Json) -> R<OnBoard> {
         "amulet" => {
             b.countdown = opt_int(v, "countdown")?;
             b.sigils = opt_int(v, "sigils")?;
+            b.evidence = match v.get("evidence") {
+                Some(_) => opt_int(v, "evidence")?,
+                None => None,
+            };
             b.acted_this_turn = boolean(v, "actedThisTurn")?;
         }
         k => return Err(format!("未知の場のカードの種類: {k}")),

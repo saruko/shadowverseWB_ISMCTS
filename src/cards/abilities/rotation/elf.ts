@@ -1,6 +1,6 @@
 // ローテーションのカード能力（elf。トークン・クレスト含む）。書き方は docs/rotation-authoring.md
 
-import type { CardAbilities, Effect, Target } from "../../../engine/dsl";
+import type { CardAbilities, Condition, Effect, Target } from "../../../engine/dsl";
 import {
   COMBO,
   ENHANCED,
@@ -15,6 +15,7 @@ import {
   addFaith,
   addToHand,
   addToHandAs,
+  allyCards,
   allyFollowers,
   bounce,
   buff,
@@ -33,6 +34,7 @@ import {
   discard,
   distribute,
   draw,
+  drawAs,
   evolveIt,
   fanfare,
   fromZone,
@@ -54,17 +56,21 @@ import {
   onAttack,
   onBuffed,
   onEnemyEnter,
+  onEnter,
   onEvolve,
   onEvolved,
   onSuperEvolve,
   onTurnEnd,
+  onTurnStart,
   oncePerOwnTurn,
   oppFollowers,
+  otherAllyCards,
   otherAllyFollowers,
   random,
   repeat,
   returnToDeck,
   slot,
+  slotMatches,
   spell,
   spendFaith,
   sub,
@@ -85,6 +91,22 @@ const mirokuFx = [mode([addToHand("フェアリー", 2)], [gainPp(2)], [distribu
 const saihaishaFx = [choose(oppFollowers()), damage(slot(), 4), addCombo1];
 const citrusFx = [summon("フェアリー", 2)];
 const spaMonkeyFx = [copy(fromZone("hand", "opponent", "random"), 1, "hand", { hidden: true })];
+
+// ---- 第10弾で使う部品 ----
+/**
+ * 自分の場の元のコスト1のカードの枚数が2以上（フォロワーだけでなく場のアミュレットも数える。『神域の物証』はコスト1）。
+ * 「自分の場の」はこれ自身も含めて数える（第10弾のこの条件を持つカードは、これ自身がコスト1でないので結果は変わらない）
+ */
+const COST1_CARDS_2: Condition = countAtLeast(allyCards({ originalCostEq: 1 }), 2);
+const gunrouFx = [summon("群狼の奉仕者", 2)];
+/**
+ * 生命蒔く異形: 「自分のデッキから1枚を引く。その中のエルフ・フォロワーすべてを自分の場に出す。」を2回。
+ * 「エルフ・フォロワー」はクラスがエルフのフォロワー（data/cards.json に「エルフ」というタイプは無いため）。
+ * 場に出すのはプレイではない（ファンファーレは働かない）。場が満杯なら手札に残る。手札が満杯で引いたカードが消えたら何もしない
+ */
+const ikeiFx = [
+  repeat(2, drawAs(1, "d"), when(slotMatches("d", { type: "follower", class: "elf" }), [moveToBoard(slot("d"))])),
+];
 
 export const ELF_ROT: Record<string, CardAbilities> = {
   // ---- 第4弾 ----
@@ -322,6 +344,51 @@ export const ELF_ROT: Record<string, CardAbilities> = {
     ],
   },
 
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  // 「これが場に出たとき」はプレイ・能力で出たときのどちらでも働く。「他の」なのでこれ自身は数えない
+  [id("好奇のネズミ")]: {
+    abilities: [onEnter(when(countAtLeast(otherAllyCards({ originalCostEq: 1 }), 2), [buff(THIS, 2, 1)]))],
+  },
+  [id("エレガントシッター")]: {
+    abilities: [fanfare(summon("神域の物証")), onEvolve(when(COST1_CARDS_2, [heal(2)]))],
+  },
+  [id("鳥獣の述懐")]: { abilities: [spell(summon("神域の物証"), crest("鳥獣の述懐"))] },
+  [id("自然の再誕")]: {
+    abilities: [
+      spell(
+        when(
+          ENHANCED,
+          [summon("フェアリー", 3, "s"), evolveIt(slot("s"))],
+          [summon("フェアリー", 1, "s"), evolveIt(slot("s"))],
+        ),
+      ),
+    ],
+  },
+  [id("花園のエルフ")]: { abilities: [onTurnEnd(addToHand("森の神秘"), addToHand("フェアリー"))] },
+  // 「自分の場の元のコスト1のカード」の枚数は、手札に加えた後に数える（スペルは場にないので数えない）
+  [id("ノーシェの尋問")]: {
+    abilities: [
+      spell(
+        random(oppFollowers()),
+        damage(slot(), 5),
+        addToHandAs("好奇のネズミ", "h"),
+        when(COST1_CARDS_2, [grant(slot("h"), ["storm"])]),
+      ),
+    ],
+  },
+  [id("伝心の相棒犬")]: {
+    abilities: [fanfare(summon("神域の物証")), onEvolve(when(COST1_CARDS_2, [summon("好奇のネズミ")]))],
+  },
+  // 出した『伝心の相棒犬』はプレイではないのでファンファーレ（神域の物証）は働かない
+  [id("獣言探偵・ノーシェ")]: {
+    abilities: [
+      fanfare(summon("伝心の相棒犬"), summon("好奇のネズミ")),
+      onSuperEvolve(buff(otherAllyFollowers(), 2, 0)),
+    ],
+  },
+  [id("群狼の奉仕者")]: { abilities: [fanfare(...gunrouFx), onEvolve(...gunrouFx)] },
+  [id("生命蒔く異形")]: { abilities: [fanfare(...ikeiFx), onSuperEvolve(...ikeiFx)] },
+
   // ---- トークン ----
   [id("新緑のフェアリー")]: { abilities: [onTurnEnd(evolveIt())] },
   [id("天槍の深淵")]: { abilities: [spell(choose(allyFollowers({ notEvolved: true })), evolveIt(slot()))] },
@@ -339,4 +406,7 @@ export const ELF_ROT_CRESTS: Record<string, CardAbilities> = {
     abilities: [onTurnEnd(when(combo(3), [buff(deckCards({ type: "follower" }), 1, 1)]))],
   },
   [crestIdOf("氷界の鹿王")]: { abilities: [onTurnEnd(when(combo(3), [addToHand("森の神秘")]))] },
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  // 【カウントダウン_2】は自動で読み取る。カウントが0になるターンにも働く（docs/rules.md 11章「ターン開始時の処理順」）
+  [crestIdOf("鳥獣の述懐")]: { abilities: [onTurnStart(summon("好奇のネズミ"))] },
 };

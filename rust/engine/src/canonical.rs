@@ -111,6 +111,10 @@ fn board_canon(c: &OnBoard) -> String {
         ]);
     } else {
         v.extend([opt(c.countdown), opt(c.sigils), b(c.acted_this_turn).into()]);
+        // 証拠の数は証拠・アミュレットだけ（今までの局面の形を変えない）
+        if let Some(n) = c.evidence {
+            v.push(n.to_string());
+        }
     }
     if !c.ext.is_default() {
         v.push(format!("E{:?}", c.ext));

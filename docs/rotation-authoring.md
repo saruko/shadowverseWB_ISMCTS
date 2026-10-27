@@ -95,6 +95,29 @@
 `hasLastWords`・`excludeSelf`・`excludeEvent`・`notInSlot`・`cardKeyword`（手札・山札のカードの書かれたキーワード）がある。
 「元のコスト」は `originalCost*`、「コスト」は `cost*`（手札で変化したコスト）。
 
+## 第10弾（ニーゲルヘリア神殺事件）で足した部品
+
+ルールは `docs/rules.md` 12章「第10弾…で加わるルール」。見本は `src/cards/abilities/rotation/neutral.ts` の第10弾の節と `tests/rotation-neutral.test.ts` の「第10弾: 【証拠】」。
+
+| テキスト | 書き方 |
+| --- | --- |
+| 【証拠】（単独行） | 自動で読み取る（場に出ると証拠の数 1、合算・相手に選ばれないはエンジンが行う） |
+| 証拠・アミュレットの「コスト1【アクト】自分のデッキから1枚を引く。自分の場の証拠を-1する。」 | `evidenceAct`（neutral.ts から import） |
+| 『神域の物証』1枚を自分の場に出す / 手札に加える / 相手の場に出す | `summon("神域の物証")` / `addToHand("神域の物証")` / `summonOpp("神域の物証")` |
+| 自分の場の証拠を-N して、… | `spendEvidence(n, ...)`（足りなければ何も起きず、後の能力も働かない。ユーザー判断） |
+| 自分の場の証拠の数 | `EVIDENCE` |
+| 証拠・アミュレット（フィルター） | `EVIDENCE_AMULET`（`{ type: "amulet", evidence: true }`） |
+| 自分が証拠・アミュレットを【アクト】したとき / アミュレットを【アクト】したとき | `onEvidenceAct(...)` / `onAllyAct(...)`。「手札で働く。」なら `inHand(...)` で包む |
+| このターン中に自分が証拠・アミュレット（アミュレット）を【アクト】していたなら | `when(actedThisTurn(true), ...)` / `when(actedThisTurn(), ...)` |
+| これが場で消滅したとき / 自分のカードが場で消滅したとき / 相手のフォロワーが場で消滅したとき | `onBanished(...)` / `onAllyBanished({}, ...)` / `onBanishedSide("opponent", { type: "follower" }, ...)`（event は消滅したカード。コピーは `copy(FROM_EVENT, 1, "board")`） |
+| これの攻撃力と体力を入れ替える | `swapStats(THIS)` |
+| それは攻撃力X/体力Yになる | `setStats(target, x, y)`。これの攻撃力・体力は `THIS_ATTACK`・`THIS_DEFENSE` |
+| 相手のリーダーの体力の最大値から体力を引いた数 | `leaderMissingHp("opponent")` |
+| 相手のリーダーの体力の最大値を半分にする | `halveLeaderMaxHp("opponent")` |
+| コスト最小のカードからランダム1枚 / 攻撃力最大の… / 選んだカードと同名の… | `random(minCost(handCards()), 1, "r")` / `maxAttack(oppFollowers())` / `sameName(oppFollowers(), "t")` |
+| 捨てた枚数（「これで捨てた枚数」） | `discard(target, "n")` → `v("n")` |
+| 【融合】アミュレット / 自分がアミュレットを【融合】したとき | `fusion: { type: "amulet" }` / `onAmuletFuse(...)` |
+
 ## 結晶・アクセラレート・信仰
 
 `data/cards.json` の `special` に公式の文言・コストがある。カードの能力に次のように書く。

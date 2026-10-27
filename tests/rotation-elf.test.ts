@@ -556,3 +556,156 @@ describe("第9弾", () => {
     expect(board(w, v.opp)[0]!.iid).not.toBe(h2.iid);
   });
 });
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」（【証拠】は docs/rules.md 12章） ----
+
+describe("第10弾", () => {
+  /** 自分の場の『神域の物証』の証拠の数（無ければ null） */
+  const evidence = (s: GameState, p: PlayerIndex) => {
+    const a = board(s, p).find((c) => c.kind === "amulet" && c.cardId === rid("神域の物証"));
+    return a && a.kind === "amulet" ? (a.evidence ?? null) : null;
+  };
+  const stats = (s: GameState, iid: number) => [fol(s, iid).attack, fol(s, iid).defense];
+  /** 自分のデッキの上から順に names のカードにする（引く順を決める） */
+  const stackDeck = (s: GameState, p: PlayerIndex, deckNames: string[]) => {
+    deckNames.forEach((n, i) => {
+      s.players[p].deck[i] = { ...s.players[p].deck[i]!, cardId: rid(n) };
+    });
+  };
+
+  it("好奇のネズミ: 場に出たとき、自分の場の他の元のコスト1のカード（アミュレットを含む）が2枚以上なら+2/+1", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "神域の物証");
+    toBoard(s, me, "好奇のネズミ");
+    const iid = toHand(s, me, "好奇のネズミ");
+    expect(stats(play(s, iid), iid)).toEqual([3, 2]);
+    // 他の元のコスト1のカードが1枚（神域の物証だけ）なら+されない
+    const u = setup();
+    toBoard(u.s, u.me, "神域の物証");
+    toBoard(u.s, u.me, "燃え滾る闘志・フェザー");
+    const j = toHand(u.s, u.me, "好奇のネズミ");
+    expect(stats(play(u.s, j), j)).toEqual([1, 1]);
+  });
+
+  it("エレガントシッター: ファンファーレで『神域の物証』を場に出す。進化時、元のコスト1のカードが2枚以上なら2回復", () => {
+    const { s, me } = setup({ turn: 5 });
+    s.players[me].ep = 2;
+    s.players[me].leaderHp = 10;
+    const iid = toHand(s, me, "エレガントシッター");
+    let t = play(s, iid);
+    expect(evidence(t, me)).toBe(1);
+    // 元のコスト1のカードが神域の物証だけなら回復しない
+    expect(applyAction(t, { type: "evolve", iid }).players[me].leaderHp).toBe(10);
+    toBoard(t, me, "好奇のネズミ");
+    t = applyAction(t, { type: "evolve", iid });
+    expect(t.players[me].leaderHp).toBe(12);
+  });
+
+  it("鳥獣の述懐: 『神域の物証』を場に出し、クレストは自分のターン開始時に『好奇のネズミ』を出す（カウントダウン_2で2回）", () => {
+    const { s, me } = setup();
+    let t = play(s, toHand(s, me, "鳥獣の述懐"));
+    expect(names(t, me)).toEqual(["神域の物証"]);
+    expect(crestNames(t, me)).toHaveLength(1);
+    t = passTurns(t, 1);
+    expect(names(t, me)).toEqual(["神域の物証", "好奇のネズミ"]);
+    // 1匹目が出たときの他の元のコスト1のカードは神域の物証だけ
+    expect(stats(t, board(t, me)[1]!.iid)).toEqual([1, 1]);
+    t = passTurns(t, 1);
+    // 2匹目は神域の物証と1匹目を数えて+2/+1。カウントが0になったクレストは無くなる
+    expect(names(t, me)).toEqual(["神域の物証", "好奇のネズミ", "好奇のネズミ"]);
+    expect(stats(t, board(t, me)[2]!.iid)).toEqual([3, 2]);
+    expect(crestNames(t, me)).toHaveLength(0);
+    t = passTurns(t, 1);
+    expect(board(t, me)).toHaveLength(3);
+  });
+
+  it("自然の再誕: 『フェアリー』1枚を出して進化させる。【エンハンス_6】なら3枚", () => {
+    const { s, me } = setup();
+    s.players[me].pp = 5;
+    let t = play(s, toHand(s, me, "自然の再誕"));
+    expect(names(t, me)).toEqual(["フェアリー"]);
+    expect((board(t, me) as FollowerOnBoard[]).map((f) => f.evolve)).toEqual(["evolved"]);
+    expect(t.players[me].pp).toBe(2);
+    const u = setup();
+    t = play(u.s, toHand(u.s, u.me, "自然の再誕"));
+    expect(names(t, u.me)).toEqual(["フェアリー", "フェアリー", "フェアリー"]);
+    expect((board(t, u.me) as FollowerOnBoard[]).every((f) => f.evolve === "evolved")).toBe(true);
+    expect(t.players[u.me].pp).toBe(4);
+  });
+
+  it("花園のエルフ: 自分のターン終了時、『森の神秘』と『フェアリー』を手札に加える", () => {
+    const { s, me } = setup();
+    toBoard(s, me, "花園のエルフ");
+    expect(handNames(endTurn(s), me)).toEqual(["森の神秘", "フェアリー"]);
+  });
+
+  it("ノーシェの尋問: ランダム1枚に5ダメージ、『好奇のネズミ』を手札に。元のコスト1のカードが2枚以上ならそれは【疾走】", () => {
+    const { s, me, opp } = setup();
+    const e = toBoard(s, opp, "燃え滾る闘志・フェザー", { defense: 10, maxDefense: 10 });
+    let t = play(s, toHand(s, me, "ノーシェの尋問"));
+    expect(fol(t, e.iid).defense).toBe(5);
+    expect(handNames(t, me)).toEqual(["好奇のネズミ"]);
+    expect(t.players[me].hand[0]!.keywords).not.toContain("storm");
+    const u = setup();
+    toBoard(u.s, u.me, "神域の物証");
+    toBoard(u.s, u.me, "好奇のネズミ");
+    t = play(u.s, toHand(u.s, u.me, "ノーシェの尋問"));
+    expect(t.players[u.me].hand[0]!.keywords).toContain("storm");
+  });
+
+  it("伝心の相棒犬: 『神域の物証』を出し【疾走】。進化時、元のコスト1のカードが2枚以上なら『好奇のネズミ』を出す", () => {
+    const { s, me } = setup({ turn: 5 });
+    s.players[me].ep = 2;
+    const iid = toHand(s, me, "伝心の相棒犬");
+    let t = play(s, iid);
+    expect(names(t, me)).toEqual(["伝心の相棒犬", "神域の物証"]);
+    expect(can(t, { type: "attack", attacker: iid, target: "leader" })).toBe(true);
+    // 元のコスト1のカードが神域の物証だけなら出さない
+    expect(names(applyAction(t, { type: "evolve", iid }), me)).toEqual(["伝心の相棒犬", "神域の物証"]);
+    toBoard(t, me, "好奇のネズミ");
+    t = applyAction(t, { type: "evolve", iid });
+    expect(names(t, me)).toEqual(["伝心の相棒犬", "神域の物証", "好奇のネズミ", "好奇のネズミ"]);
+    // 出たネズミは神域の物証ともう1匹を数えて+2/+1
+    expect(stats(t, board(t, me)[3]!.iid)).toEqual([3, 2]);
+  });
+
+  it("獣言探偵・ノーシェ: 『伝心の相棒犬』と『好奇のネズミ』を出す（相棒犬のファンファーレは働かない）。超進化時、他のフォロワーを+2/+0", () => {
+    const { s, me } = setup({ turn: 7 });
+    const iid = toHand(s, me, "獣言探偵・ノーシェ");
+    const f = toBoard(s, me, "燃え滾る闘志・フェザー") as FollowerOnBoard;
+    let t = play(s, iid);
+    expect(names(t, me)).toEqual(["燃え滾る闘志・フェザー", "獣言探偵・ノーシェ", "伝心の相棒犬", "好奇のネズミ"]);
+    const [, , dog, rat] = board(t, me) as FollowerOnBoard[];
+    expect(stats(t, rat!.iid)).toEqual([1, 1]);
+    t = applyAction(t, { type: "superEvolve", iid });
+    expect(fol(t, f.iid).attack).toBe(f.attack + 2);
+    expect(stats(t, dog!.iid)).toEqual([4, 3]);
+    expect(stats(t, rat!.iid)).toEqual([3, 1]);
+    // これ自身は+されない（超進化の+3/+3だけ）
+    expect(stats(t, iid)).toEqual([8, 7]);
+  });
+
+  it("群狼の奉仕者: ファンファーレで『群狼の奉仕者』2枚を出す。進化時も同じ（場は5枚まで）", () => {
+    const { s, me } = setup({ turn: 5 });
+    s.players[me].ep = 2;
+    const iid = toHand(s, me, "群狼の奉仕者");
+    let t = play(s, iid);
+    expect(names(t, me)).toEqual(["群狼の奉仕者", "群狼の奉仕者", "群狼の奉仕者"]);
+    t = applyAction(t, { type: "evolve", iid });
+    expect(board(t, me)).toHaveLength(5);
+  });
+
+  it("生命蒔く異形: 1枚引いてエルフ・フォロワーなら場に出す、を2回。超進化時も同じ", () => {
+    const { s, me } = setup({ turn: 7 });
+    // エルフ・フォロワー、ニュートラル・フォロワー、エルフ・スペル、エルフ・フォロワーの順に引く
+    stackDeck(s, me, ["エレガントシッター", "愛の天使・エクシアス", "鳥獣の述懐", "群狼の奉仕者"]);
+    const iid = toHand(s, me, "生命蒔く異形");
+    let t = play(s, iid);
+    // 場に出すのはプレイではないので、エレガントシッターのファンファーレ（神域の物証）は働かない
+    expect(names(t, me)).toEqual(["生命蒔く異形", "エレガントシッター"]);
+    expect(handNames(t, me)).toEqual(["愛の天使・エクシアス"]);
+    t = applyAction(t, { type: "superEvolve", iid });
+    expect(names(t, me)).toEqual(["生命蒔く異形", "エレガントシッター", "群狼の奉仕者"]);
+    expect(handNames(t, me)).toEqual(["愛の天使・エクシアス", "鳥獣の述懐"]);
+  });
+});

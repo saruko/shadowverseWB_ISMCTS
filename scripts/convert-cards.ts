@@ -11,7 +11,7 @@
 // 最後に data/starter-overrides.json（手で管理する当時の能力への上書き）を適用する。
 //
 // カードプールは、スターター（ベーシック・第1弾）と、今のローテーションで使えるカード（is_include_rotation）、
-// それらから参照されるカード・トークン。能力は、スターターのセットのカードは当時の能力（starter_card）、
+// ローテーションから外れたが能力を定義済みのパック（ROTATED_OUT_SET_IDS）、それらから参照されるカード・トークン。能力は、スターターのセットのカードは当時の能力（starter_card）、
 // それ以外は今の能力を使う。ベーシック等の両方に入るカードで当時と今の能力が違えば警告する（1 つの ID に 1 つの能力しか持てないため）。
 // API 形式の元データは npm run fetch-cards（scripts/fetch-raw.ts）で公式サイトから取得できる。
 //
@@ -219,7 +219,13 @@ const isStarterCard = (id: string) => {
   const setId = sources.get(id)?.api?.setId;
   return setId !== undefined ? STARTER_SET_IDS.has(setId) : id.startsWith("1") && (id[2] ?? "") in POOL_SETS;
 };
-const isPoolCard = (id: string) => isStarterCard(id) || sources.get(id)?.api?.rotation === true;
+/**
+ * ローテーションから外れたが、能力を定義済みのパック（ユーザー判断 2026-10-27: 第10弾の追加で外れた第4弾は残す）。
+ * カードプールに残し、rotation は付けない（今のローテーションのデッキには入らない。第9弾環境のデッキ・昔の試合を読むため）
+ */
+const ROTATED_OUT_SET_IDS = new Set([10004]);
+const isPoolCard = (id: string) =>
+  isStarterCard(id) || sources.get(id)?.api?.rotation === true || ROTATED_OUT_SET_IDS.has(sources.get(id)?.api?.setId ?? -1);
 const pool = new Set([...sources.keys()].filter(isPoolCard));
 const queue = [...pool];
 while (queue.length > 0) {

@@ -71,6 +71,7 @@ export function engineData() {
         keywords: st.keywords,
         maxAttacks: st.maxAttacks,
         earthSigil: st.earthSigil,
+        evidence: st.evidence,
         enhance: enhanceCost(c.text),
         enhanceLevels: enhanceLevels(c.text),
         token: c.set === "token",

@@ -1,6 +1,7 @@
 // ローテーションのロイヤルのカード（src/cards/abilities/rotation/royal.ts）の最小シナリオ
 
 import { describe, expect, it } from "vitest";
+import { ALL_CARDS } from "../src/cards";
 import { applyAction, leaderId, type GameState, type PlayerIndex } from "../src/engine";
 import {
   FILLER,
@@ -595,5 +596,219 @@ describe("第9弾・トークン", () => {
     const g = toBoard(u.s, u.opp, "燃え滾る闘志・フェザー");
     u.s.players[u.me].pp = 0;
     expect(follower(play(u.s, toHand(u.s, u.me, "天剣の深淵")), g.iid)?.defense).toBe(3);
+  });
+});
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」（docs/rules.md 12章） ----
+
+describe("第10弾", () => {
+  const FILLER_NAME = "燃え滾る闘志・フェザー"; // ロイヤル 3コスト 5/4 能力なし
+  const tough = { defense: 20, maxDefense: 20 };
+  /** 自分の場に『神域の物証』を置いて【アクト】する（PP1。1枚引き、証拠が0になって破壊される） */
+  const actClue = (s: GameState, p: PlayerIndex) => {
+    const a = toBoard(s, p, "神域の物証");
+    return applyAction(s, { type: "act", iid: a.iid });
+  };
+  /** 手札のカードの攻撃力/体力 */
+  const handStats = (s: GameState, p: PlayerIndex, iid: number) => {
+    const h = s.players[p].hand.find((c) => c.iid === iid);
+    const cd = ALL_CARDS.find((c) => c.id === h?.cardId);
+    return h && cd?.type === "follower" ? [cd.attack + h.attackMod, cd.defense + h.defenseMod] : undefined;
+  };
+  const stats = (s: GameState, iid: number) => {
+    const f = follower(s, iid);
+    return f ? [f.attack, f.defense] : undefined;
+  };
+
+  it("無垢なる新聞売り: 手札で、証拠・アミュレットを【アクト】すると攻撃力と体力を入れ替えて+1/+0（2/1→2/2）。場に出ても残る", () => {
+    const { s, me } = setup();
+    const iid = toHand(s, me, "無垢なる新聞売り");
+    let t = actClue(s, me);
+    expect(handStats(t, me, iid)).toEqual([2, 2]);
+    t.players[me].pp = 3;
+    t = play(t, iid);
+    expect(stats(t, iid)).toEqual([2, 2]);
+    // エンハンスしていないのでコピーは出ない
+    expect(names(t, me)).toEqual(["無垢なる新聞売り"]);
+  });
+
+  it("無垢なる新聞売り: エンハンス_4 でコピー（元の 2/1）を場に出す。ラストワードで『神域の物証』を出す", () => {
+    const { s, me } = setup();
+    const iid = toHand(s, me, "無垢なる新聞売り");
+    let t = actClue(s, me);
+    t = play(t, iid);
+    expect(names(t, me)).toEqual(["無垢なる新聞売り", "無垢なる新聞売り"]);
+    const c = board(t, me).find((x) => x.iid !== iid)!;
+    expect(stats(t, c.iid)).toEqual([2, 1]);
+    // ラストワード（相手の場の新聞売りを破壊すると、相手の場に物証が出る）
+    const u = setup();
+    const f = toBoard(u.s, u.opp, "無垢なる新聞売り");
+    const v = play(u.s, toHand(u.s, u.me, "表裏の現場検証"));
+    expect(follower(v, f.iid)).toBeUndefined();
+    expect(names(v, u.opp)).toEqual(["神域の物証"]);
+  });
+
+  it("ノー・ライフの問答: 物証を出す。このターンに証拠・アミュレットを【アクト】していたなら新聞売りも出す", () => {
+    const { s, me } = setup();
+    expect(names(play(s, toHand(s, me, "ノー・ライフの問答")), me)).toEqual(["神域の物証"]);
+    const u = setup();
+    let t = actClue(u.s, u.me);
+    expect(names(t, u.me)).toEqual([]);
+    t = play(t, toHand(t, u.me, "ノー・ライフの問答"));
+    expect(names(t, u.me)).toEqual(["神域の物証", "無垢なる新聞売り"]);
+  });
+
+  it("表裏の現場検証: 5ダメージ。このターンに証拠・アミュレットを【アクト】していたなら10ダメージ", () => {
+    const { s, me, opp } = setup();
+    const f = toBoard(s, opp, FILLER_NAME, tough);
+    expect(follower(play(s, toHand(s, me, "表裏の現場検証")), f.iid)?.defense).toBe(15);
+    const u = setup();
+    const g = toBoard(u.s, u.opp, FILLER_NAME, tough);
+    let t = actClue(u.s, u.me);
+    t = play(t, toHand(t, u.me, "表裏の現場検証"));
+    expect(follower(t, g.iid)?.defense).toBe(10);
+  });
+
+  it("チーキーデザイナー: 入れ替えた攻撃力（1/4→5/1）でXダメージ、物証を出す。進化時に新聞売りを出す", () => {
+    const { s, me, opp } = setup({ turn: 5 });
+    const iid = toHand(s, me, "チーキーデザイナー");
+    const f = toBoard(s, opp, FILLER_NAME, tough);
+    let t = actClue(s, me);
+    expect(handStats(t, me, iid)).toEqual([5, 1]);
+    t = play(t, iid);
+    expect(follower(t, f.iid)?.defense).toBe(15);
+    expect(names(t, me)).toEqual(["チーキーデザイナー", "神域の物証"]);
+    t = evolve(t, iid);
+    expect(names(t, me)).toEqual(["チーキーデザイナー", "神域の物証", "無垢なる新聞売り"]);
+  });
+
+  it("千金の大参謀・アルメリゼ: 金貨を加える。進化でクレスト（カウント2）、超進化ならカウント+2で4", () => {
+    const { s, me } = setup({ turn: 5 });
+    const iid = toHand(s, me, "千金の大参謀・アルメリゼ");
+    let t = play(s, iid);
+    expect(handNames(t, me)).toEqual(["輝く金貨"]);
+    t = evolve(t, iid);
+    expect(crestNames(t, me)).toHaveLength(1);
+    expect(t.players[me].crests[0]?.countdown).toBe(2);
+    const u = setup({ turn: 7 });
+    const a = toBoard(u.s, u.me, "千金の大参謀・アルメリゼ");
+    const v = superEvolve(u.s, a.iid);
+    expect(crestNames(v, u.me)).toHaveLength(1);
+    expect(v.players[u.me].crests[0]?.countdown).toBe(4);
+  });
+
+  it("クレスト：千金の大参謀・アルメリゼ: 自分のターン終了時、コスト0の黄金の小剣、次は黄金の杯を手札に加える", () => {
+    const { s, me } = setup({ turn: 7 });
+    const a = toBoard(s, me, "千金の大参謀・アルメリゼ");
+    let t = superEvolve(s, a.iid);
+    t = applyAction(t, { type: "endTurn" });
+    expect(handNames(t, me)).toContain("黄金の小剣");
+    expect(handNames(t, me)).not.toContain("黄金の杯");
+    t = applyAction(t, { type: "endTurn" });
+    t.players[me].pp = 0;
+    expect(handCostOf(t, me, "黄金の小剣")).toBe(0);
+    t = applyAction(t, { type: "endTurn" });
+    expect(handNames(t, me)).toContain("黄金の杯");
+    t = applyAction(t, { type: "endTurn" });
+    t.players[me].pp = 0;
+    expect(handCostOf(t, me, "黄金の杯")).toBe(0);
+  });
+
+  it("ジュエルレディー: 首飾りを加える。スペルをプレイしたとき、自分のターンごとに1回、相手のフォロワーすべてと相手のリーダーに2ダメージ", () => {
+    const { s, me, opp } = setup();
+    const f = toBoard(s, opp, FILLER_NAME, tough);
+    let t = play(s, toHand(s, me, "ジュエルレディー"));
+    expect(handNames(t, me)).toEqual(["黄金の首飾り"]);
+    t = play(t, toHand(t, me, "黄金の杯"));
+    expect(follower(t, f.iid)?.defense).toBe(18);
+    expect(hp(t, opp)).toBe(18);
+    t = play(t, toHand(t, me, "黄金の杯"));
+    expect(follower(t, f.iid)?.defense).toBe(18);
+    expect(hp(t, opp)).toBe(18);
+  });
+
+  it("安穏の好事家: 入れ替えた攻撃力/体力（5/1→2/5）の新聞売り2枚を出す。進化時に他のフォロワーすべてに必殺", () => {
+    const { s, me } = setup({ turn: 5 });
+    const iid = toHand(s, me, "安穏の好事家");
+    let t = actClue(s, me);
+    expect(handStats(t, me, iid)).toEqual([2, 5]);
+    t = play(t, iid);
+    expect(names(t, me)).toEqual(["安穏の好事家", "無垢なる新聞売り", "無垢なる新聞売り"]);
+    const others = board(t, me).filter((c) => c.iid !== iid);
+    expect(others.map((c) => stats(t, c.iid))).toEqual([
+      [2, 5],
+      [2, 5],
+    ]);
+    t = evolve(t, iid);
+    expect(others.map((c) => follower(t, c.iid)?.keywords.includes("bane"))).toEqual([true, true]);
+    expect(follower(t, iid)?.keywords).not.toContain("bane");
+  });
+
+  it("安穏の好事家: 入れ替えなければ 5/1 の新聞売りを出す", () => {
+    const { s, me } = setup();
+    const iid = toHand(s, me, "安穏の好事家");
+    const t = play(s, iid);
+    expect(board(t, me).filter((c) => c.iid !== iid).map((c) => stats(t, c.iid))).toEqual([
+      [5, 1],
+      [5, 1],
+    ]);
+  });
+
+  it("突撃の号令: スティールナイト2枚を出し、進化させ、バリアを持たせる", () => {
+    const { s, me } = setup();
+    const t = play(s, toHand(s, me, "突撃の号令"));
+    expect(names(t, me)).toEqual(["スティールナイト", "スティールナイト"]);
+    for (const c of board(t, me)) {
+      const f = follower(t, c.iid)!;
+      expect(f.evolve).toBe("evolved");
+      expect(f.keywords).toContain("barrier");
+    }
+  });
+
+  it("変心の衛士: 自分の場にアミュレットがなければ何もしない。あれば選んだフォロワーを消滅（超進化時も同じ）", () => {
+    const { s, me, opp } = setup();
+    const f = toBoard(s, opp, FILLER_NAME);
+    expect(follower(play(s, toHand(s, me, "変心の衛士")), f.iid)).toBeDefined();
+    const u = setup();
+    toBoard(u.s, u.me, "神域の物証");
+    const g = toBoard(u.s, u.opp, FILLER_NAME);
+    const t = play(u.s, toHand(u.s, u.me, "変心の衛士"));
+    expect(follower(t, g.iid)).toBeUndefined();
+    expect(t.players[u.opp].graveyard).toBe(u.s.players[u.opp].graveyard);
+    const w = setup({ turn: 7 });
+    const c = toBoard(w.s, w.me, "変心の衛士");
+    toBoard(w.s, w.me, "戦慄の海賊旗");
+    const h = toBoard(w.s, w.opp, FILLER_NAME);
+    const x = superEvolve(w.s, c.iid);
+    expect(follower(x, h.iid)).toBeUndefined();
+    expect(opp).toBe(u.opp);
+  });
+
+  it("表裏探偵・ノー・ライフ: 5/6 ならコピー（5/6）は必殺、これはドレイン", () => {
+    const { s, me } = setup();
+    const iid = toHand(s, me, "表裏探偵・ノー・ライフ");
+    const t = play(s, iid);
+    expect(names(t, me)).toEqual(["表裏探偵・ノー・ライフ", "表裏探偵・ノー・ライフ"]);
+    const c = board(t, me).find((x) => x.iid !== iid)!;
+    expect(stats(t, c.iid)).toEqual([5, 6]);
+    expect(follower(t, c.iid)?.keywords).toContain("bane");
+    expect(follower(t, c.iid)?.keywords).not.toContain("ward");
+    expect(follower(t, iid)?.keywords).toContain("drain");
+    expect(follower(t, iid)?.keywords).not.toContain("storm");
+  });
+
+  it("表裏探偵・ノー・ライフ: 入れ替えて 7/5 ならコピー（5/6）は守護、これは疾走", () => {
+    const { s, me } = setup();
+    const iid = toHand(s, me, "表裏探偵・ノー・ライフ");
+    let t = actClue(s, me);
+    expect(handStats(t, me, iid)).toEqual([7, 5]);
+    t = play(t, iid);
+    const c = board(t, me).find((x) => x.iid !== iid)!;
+    expect(stats(t, c.iid)).toEqual([5, 6]);
+    expect(follower(t, c.iid)?.keywords).toContain("ward");
+    expect(follower(t, c.iid)?.keywords).not.toContain("bane");
+    expect(follower(t, iid)?.keywords).toContain("storm");
+    expect(follower(t, iid)?.keywords).not.toContain("drain");
+    expect(can(t, { type: "attack", attacker: iid, target: "leader" })).toBe(true);
   });
 });

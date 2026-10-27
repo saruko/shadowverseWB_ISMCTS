@@ -23,6 +23,10 @@ export function invariantViolations(state: GameState): string[] {
       if (c.kind === "amulet" && c.sigils !== null && pl.board.filter((x) => x.kind === "amulet" && x.sigils !== null).length > 1) {
         v.push(`${where}: 【土の印】アミュレットが複数`);
       }
+      if (c.kind === "amulet" && c.evidence !== undefined && pl.board.filter((x) => x.kind === "amulet" && x.evidence !== undefined).length > 1) {
+        v.push(`${where}: 証拠・アミュレットが複数`);
+      }
+      if (c.kind === "amulet" && c.evidence !== undefined && c.evidence < 1) v.push(`${where}: 証拠の数が 0 以下`);
     }
     for (const c of pl.deck) {
       if (c.kept && (c.kept.iid !== c.iid || c.kept.cardId !== c.cardId)) v.push(`${where}: 山札のカード ${c.iid} の手札での状態が別のカードのもの`);

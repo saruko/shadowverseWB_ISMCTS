@@ -4,6 +4,7 @@ import type { Ability, CardAbilities, Effect } from "../../../engine/dsl";
 import {
   ENHANCED,
   EVENT,
+  FROM_EVENT,
   OPP_LEADER,
   OWN_TURN,
   RELEASED_ULTIMATE,
@@ -27,6 +28,7 @@ import {
   countAtLeast,
   crest,
   crestIdOf,
+  crestsOf,
   cycleEffects,
   damage,
   destroy,
@@ -45,18 +47,22 @@ import {
   inHand,
   lastWords,
   loseLastWords,
+  minCost,
   mode,
   modeAll,
   onAllyAct,
   onAllyDestroyed,
   onAllyDraw,
   onAllySuperEvolve,
+  onAttack,
+  onBanishedSide,
   onEnter,
   onEvolve,
   onEvolved,
   onLeaderHealedEach,
   onSuperEvolve,
   onTurnEnd,
+  onTurnStart,
   oppFollowers,
   otherAllyFollowers,
   otherFollowers,
@@ -98,6 +104,11 @@ const crystalOf = (name: string, cost: number, countdownN: number, ...more: Abil
 const FORESIGHT: Effect[] = [choose(oppFollowers()), damage(slot(), 2)];
 const CHOOSE_DESTROY: Effect[] = [choose(oppFollowers()), destroy(slot())];
 const INITIA: Effect[] = [choose(oppFollowers()), banish(slot()), when(AMULETS_3, [heal(3)])];
+
+// 第10弾: 相手の場のフォロワー1枚を選ぶ。それを消滅（ラピッドハット・亜教の偶像・地害の矯正者）
+const CHOOSE_BANISH: Effect[] = [choose(oppFollowers()), banish(slot())];
+/** 第10弾: 自分の『クレスト：地害の三悪・ラピッドハット』のカウントを+1する */
+const RAPIDHAT_CREST_PLUS1: Effect = { op: "countdown", target: crestsOf("self", "地害の三悪・ラピッドハット"), amount: 1 };
 
 export const BISHOP_ROT: Record<string, CardAbilities> = {
   // ---- 第4弾 ----
@@ -393,6 +404,53 @@ export const BISHOP_ROT: Record<string, CardAbilities> = {
     ],
   },
 
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  [id("地害の加工人")]: { abilities: [lastWords(addToHand("神域の物証", 2))] },
+  [id("孤高なる鍛錬")]: {
+    abilities: [spell(choose(allyFollowers()), buff(slot(), 2, 2), grant(slot(), ["barrier"]))],
+  },
+  [id("地害の調教師")]: { abilities: [fanfare(addToHand("地害の兎")), onEvolve(gainPp(1))] },
+  [id("不毛の証言")]: {
+    // （1）は相手のフォロワーがいなくてもクレストを持つものとした（推定）
+    abilities: [
+      spell(mode([random(oppFollowers(), 1, "r"), damage(slot("r"), 4), crest("不毛の証言")], [summon("地害の兎")])),
+    ],
+  },
+  [id("有翼の奏者")]: {
+    abilities: [fanfare(summon("ホーリーファルコン")), onEvolve(buff(otherAllyFollowers(), 1, 1))],
+  },
+  [id("荒廃の繁殖")]: {
+    abilities: [spell(when(ENHANCED, [summon("地害の兎", 4)], [summon("地害の兎", 2)]))],
+  },
+  [id("地害の三悪・ラピッドハット")]: {
+    // 超進化では【進化時】（クレスト。カウント1）の後に【超進化時】（+1）が働くので、クレストのカウントは2になる
+    abilities: [
+      fanfare(...CHOOSE_BANISH, summon("地害の兎")),
+      onEvolve(crest("地害の三悪・ラピッドハット")),
+      onSuperEvolve(RAPIDHAT_CREST_PLUS1),
+    ],
+  },
+  [id("亜教の偶像")]: {
+    cannotAttack: true,
+    // コピーは元のカード（場での強化・進化は写さない）。これ自身の【進化時】で消滅させたものにも働く
+    abilities: [
+      onBanishedSide("opponent", { type: "follower" }, when(OWN_TURN, [copy(FROM_EVENT, 1, "board")])),
+      onEvolve(...CHOOSE_BANISH),
+    ],
+  },
+  [id("闘志の修行僧")]: { abilities: [onAttack(buff(THIS, 2, 2), grant(THIS, ["barrier"]))] },
+  [id("地害の矯正者")]: {
+    abilities: [fanfare(...CHOOSE_BANISH, summon("地害の兎", 2)), onSuperEvolve(draw(2), heal(2))],
+  },
+  // 第10弾のトークン
+  [id("地害の兎")]: {
+    // 「場に出たとき」なので能力で出たときも働く。手札が無ければ消滅は起きず、進化だけする
+    abilities: [
+      onEnter(random(minCost(handCards()), 1, "r"), banish(slot("r")), evolveIt(THIS)),
+      lastWords(damage(OPP_LEADER, 2)),
+    ],
+  },
+
   // ---- トークン ----
   [id("月影の指輪")]: {
     abilities: [onTurnEnd(when(AMULETS_3, [damage(union(oppFollowers(), OPP_LEADER), 3)]))],
@@ -435,4 +493,8 @@ export const BISHOP_ROT_CRESTS: Record<string, CardAbilities> = {
     // 「…あるなら、相手のリーダーに1ダメージ。自分のリーダーを1回復。」の条件は回復にも掛かるものとした（推定）
     abilities: [onTurnEnd(when(HAS_COST6, [damage(OPP_LEADER, 1), heal(1)]))],
   },
+
+  // ---- 第10弾「ニーゲルヘリア神殺事件」（【カウントダウン】はデータから読む） ----
+  [crestIdOf("不毛の証言")]: { abilities: [onTurnStart(heal(1), addToHand("神域の物証"))] },
+  [crestIdOf("地害の三悪・ラピッドハット")]: { abilities: [onTurnStart(summon("地害の兎"))] },
 };

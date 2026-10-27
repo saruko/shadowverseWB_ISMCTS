@@ -75,6 +75,9 @@ pub fn card_matches(s: &GameState, ctx: &Ctx, iid: Iid, filter: Option<&CardFilt
     if f.earth_sigil && !cd.earth_sigil {
         return false;
     }
+    if f.evidence && !cd.evidence {
+        return false;
+    }
     if let Some(c) = board {
         if let Some(k) = f.keyword {
             if !c.has_keyword(k) {
@@ -191,6 +194,7 @@ pub fn card_idx_matches(s: &GameState, ctx: &Ctx, cid: CardIdx, f: Option<&CardF
                 .iter()
                 .any(|a| a.trigger.on() == On::Spellboost))
         || (f.earth_sigil && !cd.earth_sigil)
+        || (f.evidence && !cd.evidence)
     {
         return false;
     }
@@ -253,7 +257,8 @@ pub fn resolve_target(s: &GameState, ctx: &Ctx, t: &Target) -> Vec<Iid> {
 fn resolve_into(s: &GameState, ctx: &Ctx, t: &Target, out: &mut Vec<Iid>) {
     match t {
         Target::This => {
-            if exists_entity(s, ctx.source) {
+            // クレストの能力の「これ」はクレスト自身（第10弾。「これを破壊」「これのカウントを-1」）
+            if exists_entity(s, ctx.source) || find_crest(s, ctx.source).is_some() {
                 out.push(ctx.source)
             }
         }
@@ -358,6 +363,30 @@ fn resolve_into(s: &GameState, ctx: &Ctx, t: &Target, out: &mut Vec<Iid>) {
                 }
             }
         }
+        Target::MinCost { of } => {
+            let v: Vec<(Iid, i32)> = resolve_target(s, ctx, of)
+                .into_iter()
+                .map(|id| (id, entity_stat(s, ctx, id, CardStat::Cost)))
+                .collect();
+            if let Some(min) = v.iter().map(|x| x.1).min() {
+                out.extend(v.iter().filter(|x| x.1 == min).map(|x| x.0));
+            }
+        }
+        Target::SameName { of, slot } => {
+            let Some((sc, _)) = slot_card(s, ctx, *slot) else {
+                return;
+            };
+            let name = &card(sc).name;
+            for id in resolve_target(s, ctx, of) {
+                let c = s
+                    .board_card(id)
+                    .map(|b| b.card)
+                    .or_else(|| s.hand_card(id).map(|h| h.card));
+                if c.is_some_and(|c| card(c).name == *name) {
+                    out.push(id);
+                }
+            }
+        }
     }
 }
 
@@ -371,9 +400,10 @@ fn selectable(s: &GameState, chooser: PlayerIndex, ids: Vec<Iid>) -> Vec<Iid> {
             s.find_board(id).map(|(p, _)| p) == Some(opp)
         }
     };
+    // 【潜伏】【オーラ】と、証拠・アミュレット（相手の能力で選ばれない。docs/rules.md 12章）
     let blocked = |id: Iid| {
         s.board_card(id)
-            .map(|c| c.has_keyword(AMBUSH) || c.has_keyword(AURA))
+            .map(|c| c.has_keyword(AMBUSH) || c.has_keyword(AURA) || c.evidence.is_some())
             .unwrap_or(false)
     };
     let only: Vec<Iid> = ids
@@ -443,6 +473,17 @@ pub fn eval_value(s: &GameState, ctx: &Ctx, v: &Value) -> i32 {
             Some(f) => f.attack_value(),
             None => ctx.source_attack,
         },
+        ValueObj::ThisDefense => entity_stat(s, ctx, ctx.source, CardStat::Defense),
+        ValueObj::Evidence => evidence_amulet(s, ctx.controller)
+            .and_then(|i| pl.board[i].evidence)
+            .unwrap_or(0),
+        ValueObj::LeaderMissingHp { side } => {
+            let (ps, n) = side_players(s, ctx, *side);
+            ps[..n]
+                .iter()
+                .map(|&q| (s.players[q].leader_max_hp - s.players[q].leader_hp).max(0))
+                .sum()
+        }
         ValueObj::CostOf { slot } => ctx.var(*slot),
         ValueObj::ThisX => source_x(s, ctx),
         ValueObj::DestroyedThisTurn { stat, filter } => pl
@@ -641,6 +682,14 @@ pub fn eval_cond(s: &GameState, ctx: &Ctx, c: &Condition) -> bool {
         }
         Condition::ThisCostEq { value } => this_cost(s, ctx) == *value,
         Condition::Fused => ctx.ext.fused || s.board_card(ctx.source).is_some_and(|b| b.ext.fused),
+        Condition::ActedThisTurn { evidence } => {
+            let t = if *evidence {
+                pl.ext.acted_evidence_turn
+            } else {
+                pl.ext.acted_amulet_turn
+            };
+            t != 0 && t == s.turn
+        }
         Condition::EvolvedCountAtLeast { at_least } => pl.ext.evolved_count >= *at_least,
         Condition::HandSameCostAtLeast { at_least } => {
             let mut counts = [0i32; 32];
@@ -932,6 +981,19 @@ pub fn enter_board(s: &mut GameState, p: PlayerIndex, mut c: OnBoard) -> bool {
             pl.board.make_mut().remove(oi);
         }
     }
+    // 証拠・アミュレットは、他の証拠・アミュレットすべてを消滅させて数を合算する（docs/rules.md 12章）
+    if c.evidence.is_some() {
+        let others: Vec<(Iid, i32)> = s.players[p]
+            .board
+            .iter()
+            .filter(|x| x.evidence.is_some())
+            .map(|x| (x.iid, x.evidence.unwrap_or(0)))
+            .collect();
+        for (oid, n) in others {
+            c.evidence = Some(c.evidence.unwrap() + n);
+            leave_board(s, oid, LeaveReason::Banish);
+        }
+    }
     let (iid, cid) = (c.iid, c.card);
     let enter = board_abilities_on(&c, On::Enter);
     if c.is_follower && s.players[p].ext.rotation {
@@ -1017,6 +1079,37 @@ pub fn leave_board(s: &mut GameState, iid: Iid, mut reason: LeaveReason) {
             _ => None,
         });
     }
+    // 場で消滅したときの誘発（第10弾。離れる前の状態で条件を判定する）
+    if reason == LeaveReason::Banish {
+        fire_side(s, p, |s, t, src| match t {
+            Trigger::AllyBanished { filter, side }
+                if matches!(side, None | Some(Side::Me) | Some(Side::Both))
+                    && src != iid
+                    && card_matches(s, &Ctx::new(p, src), iid, filter.as_ref()) =>
+            {
+                Some(Some(iid))
+            }
+            _ => None,
+        });
+        let opp = opponent(p);
+        fire_side(s, opp, |s, t, src| match t {
+            Trigger::AllyBanished { filter, side }
+                if matches!(side, Some(Side::Opponent) | Some(Side::Both))
+                    && card_matches(s, &Ctx::new(opp, src), iid, filter.as_ref()) =>
+            {
+                Some(Some(iid))
+            }
+            _ => None,
+        });
+        // event のカードが場を離れても分かるように（ローテーションの対戦だけ。スターターの局面は変えない）
+        if s.players[p].ext.rotation || s.players[opp].ext.rotation {
+            for q in s.queue.iter_mut() {
+                if q.ctx.event == Some(iid) && q.ctx.ext.event_card.is_none() {
+                    q.ctx.ext.event_card = Some(cid);
+                }
+            }
+        }
+    }
     let idx = s.players[p]
         .board
         .iter()
@@ -1053,7 +1146,14 @@ pub fn leave_board(s: &mut GameState, iid: Iid, mut reason: LeaveReason) {
             let h = revealed_hand_card(s, c.card, None);
             s.add_hand_card(p, h);
         }
-        LeaveReason::Banish => {}
+        LeaveReason::Banish => {
+            // 「これが場で消滅したとき」
+            for a in board_abilities_on(&c, On::Banished) {
+                let mut ctx = Ctx::new(p, c.iid);
+                ctx.ext.source_card = Some(c.card);
+                queue(s, a, ctx);
+            }
+        }
     }
 
     if c.is_follower {
@@ -1595,23 +1695,27 @@ pub fn fire_turn_end(s: &mut GameState) {
     });
 }
 
-pub fn fire_ally_act(s: &mut GameState, p: PlayerIndex) {
-    fire_side(s, p, |_, t, _| {
-        if matches!(t, Trigger::AllyAct) {
+/// 自分がアミュレット（iid）を【アクト】したときの誘発（filter はアクトしたアミュレットで判定する。event は無し）
+pub fn fire_ally_act(s: &mut GameState, p: PlayerIndex, iid: Iid) {
+    fire_side(s, p, |s, t, src| match t {
+        Trigger::AllyAct { filter } if card_matches(s, &Ctx::new(p, src), iid, filter.as_ref()) => {
             Some(None)
-        } else {
-            None
         }
+        _ => None,
     });
 }
 
-pub fn fire_ally_fuse(s: &mut GameState, p: PlayerIndex) {
-    fire_side(s, p, |_, t, _| {
-        if matches!(t, Trigger::AllyFuse) {
-            Some(None)
-        } else {
-            None
+/// 自分が融合したときの誘発（materials は素材のカード）
+pub fn fire_ally_fuse(s: &mut GameState, p: PlayerIndex, materials: &[CardIdx]) {
+    fire_side(s, p, |s, t, src| match t {
+        Trigger::AllyFuse { filter } => {
+            let ctx = Ctx::new(p, src);
+            materials
+                .iter()
+                .any(|&c| card_idx_matches(s, &ctx, c, filter.as_ref()))
+                .then_some(None)
         }
+        _ => None,
     });
 }
 
@@ -1710,7 +1814,8 @@ fn discards_or_returns(frame: &Frame, slot: SlotId) -> bool {
             frame.effects.get(i),
             FEff::Dsl(
                 Effect::Discard {
-                    target: Target::Slot { slot: x }
+                    target: Target::Slot { slot: x },
+                    ..
                 } | Effect::ReturnToDeck {
                     target: Target::Slot { slot: x },
                     ..
@@ -1787,6 +1892,11 @@ fn pick_random(s: &mut GameState, mut pool: Vec<Iid>, count: usize) -> Vec<Iid> 
     pool
 }
 
+/// 自分の場の証拠・アミュレットの位置
+fn evidence_amulet(s: &GameState, p: PlayerIndex) -> Option<usize> {
+    s.players[p].board.iter().position(|c| c.evidence.is_some())
+}
+
 fn sigil_amulet(s: &GameState, p: PlayerIndex) -> Option<usize> {
     s.players[p]
         .board
@@ -1854,10 +1964,13 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
         Effect::Distribute { target, amount } => {
             // 古いフォロワーから順に、その体力と同じ値を割り当てる。ダメージは同時に与える
             let mut rest = val!(amount);
-            let mut fs: Vec<(i32, Iid, i32)> = targets!(target)
-                .into_iter()
-                .filter_map(|id| s.follower(id).map(|f| (f.order, f.iid, f.defense)))
+            let ids = targets!(target);
+            let mut fs: Vec<(i32, Iid, i32)> = ids
+                .iter()
+                .filter_map(|&id| s.follower(id).map(|f| (f.order, f.iid, f.defense)))
                 .collect();
+            // 対象にリーダーがあれば、フォロワーに割り当てた残りをリーダーに（劫焔のキマイラ。docs/rules.md 11章 ⚠️）
+            let leader = ids.iter().copied().find(|&id| is_leader(id));
             fs.sort_by_key(|x| x.0);
             let mut plan = Vec::new();
             for (_, iid, def) in fs {
@@ -1870,6 +1983,9 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
             }
             for (iid, n) in plan {
                 damage_follower(s, iid, n);
+            }
+            if let Some(l) = leader.filter(|_| rest > 0) {
+                damage_entity(s, l, rest);
             }
         }
         Effect::Destroy { target, count_var } => {
@@ -1903,6 +2019,10 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
                     count += 1;
                 } else if s.find_board(id).is_some() {
                     leave_board(s, id, LeaveReason::Banish);
+                    count += 1;
+                } else if let Some((q, i)) = s.find_hand(id) {
+                    // 手札のカードの消滅（地害の兎。墓場には行かない）
+                    s.players[q].hand.make_mut().remove(i);
                     count += 1;
                 }
             }
@@ -2153,12 +2273,14 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
                 s.players[p].deck = deck.into();
             }
         }
-        Effect::Discard { target } => {
+        Effect::Discard { target, count_var } => {
             let var = cost_var_of(target);
+            let mut discarded = 0;
             for id in targets!(target) {
                 let Some((q, i)) = s.find_hand(id) else {
                     continue;
                 };
+                discarded += 1;
                 frame.ctx.set_var(var, hand_cost(&s.players[q].hand[i]));
                 let h = s.players[q].hand.make_mut().remove(i);
                 s.players[q].graveyard += 1;
@@ -2177,6 +2299,9 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
                     }
                     queue(s, a, ctx);
                 }
+            }
+            if let Some(v) = count_var {
+                frame.ctx.set_var(*v, discarded);
             }
         }
         Effect::Transform {
@@ -2485,6 +2610,77 @@ fn exec(s: &mut GameState, frame: &mut Frame, eff: &'static Effect) -> bool {
             let t = &mut s.players[if *side == Side::Me { p } else { opponent(p) }];
             t.leader_max_hp = *value;
             t.leader_hp = t.leader_hp.min(*value);
+        }
+        Effect::HalveLeaderMaxHp { side } => {
+            let (ps, n) = side_players(s, &frame.ctx, *side);
+            for &q in &ps[..n] {
+                let t = &mut s.players[q];
+                // 端数は切り上げ（docs/rules.md 12章 ⚠️）
+                t.leader_max_hp = (t.leader_max_hp + 1) / 2;
+                t.leader_hp = t.leader_hp.min(t.leader_max_hp);
+            }
+        }
+        Effect::SpendEvidence { amount, then } => {
+            if let Some(i) = evidence_amulet(s, p) {
+                let a = &mut s.players[p].board.make_mut()[i];
+                let have = a.evidence.unwrap_or(0);
+                if have >= *amount {
+                    a.evidence = Some(have - amount);
+                    let iid = a.iid;
+                    // 数が0になった証拠・アミュレットは破壊される（消滅ではない。docs/rules.md 12章）
+                    if have - amount == 0 {
+                        leave_board(s, iid, LeaveReason::Destroy);
+                    }
+                    splice(frame, then, 1);
+                    return true;
+                }
+            }
+        }
+        Effect::SwapStats { target } => {
+            for id in targets!(target) {
+                if let Some((q, i)) = s.find_hand(id) {
+                    let h = &mut s.players[q].hand.make_mut()[i];
+                    let cd = card(h.card);
+                    let (a, d) = (cd.attack + h.attack_mod, cd.defense + h.defense_mod);
+                    h.attack_mod = d - cd.attack;
+                    h.defense_mod = a - cd.defense;
+                } else if let Some((q, i)) = s.find_board(id) {
+                    let f = &mut s.players[q].board.make_mut()[i];
+                    if f.is_follower {
+                        let (a, d) = (f.attack, f.defense);
+                        f.attack = d;
+                        f.defense = a;
+                        f.max_defense = a;
+                    }
+                }
+            }
+            destroy_dead(s);
+        }
+        Effect::SetStats {
+            target,
+            attack,
+            defense,
+        } => {
+            let (a, d) = (
+                eval_value(s, &frame.ctx, attack).max(0),
+                eval_value(s, &frame.ctx, defense).max(0),
+            );
+            for id in targets!(target) {
+                if let Some((q, i)) = s.find_hand(id) {
+                    let h = &mut s.players[q].hand.make_mut()[i];
+                    let cd = card(h.card);
+                    h.attack_mod = a - cd.attack;
+                    h.defense_mod = d - cd.defense;
+                } else if let Some((q, i)) = s.find_board(id) {
+                    let f = &mut s.players[q].board.make_mut()[i];
+                    if f.is_follower {
+                        f.attack = a;
+                        f.defense = d;
+                        f.max_defense = d;
+                    }
+                }
+            }
+            destroy_dead(s);
         }
         Effect::If {
             cond,

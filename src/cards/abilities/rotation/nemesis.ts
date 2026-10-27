@@ -1,5 +1,6 @@
 // ローテーションのカード能力（nemesis。トークン・クレスト含む）。書き方は docs/rotation-authoring.md
 
+import rawCards from "../../../../data/cards.json";
 import type { CardAbilities, CardFilter, Effect } from "../../../engine/dsl";
 import {
   DECK_NO_DUPLICATES,
@@ -39,21 +40,27 @@ import {
   gainEp,
   gainPp,
   grant,
+  halveLeaderMaxHp,
   handCards,
   heal,
   id,
   inHand,
   lastWords,
   loseLastWords,
+  maxAttack,
   mode,
   modeAll,
+  addToHandAs,
   onAllyEnter,
+  onAllyFuse,
   onAllyPlay,
+  onAmuletFuse,
   onClash,
   onEnemyAttackLeader,
   onEnter,
   onEvolve,
   onEvolved,
+  onFused,
   onSuperEvolve,
   onTurnEnd,
   onTurnStart,
@@ -62,11 +69,14 @@ import {
   oppHand,
   otherAllyFollowers,
   random,
+  randomEffects,
   randomUnused,
   repeat,
+  sameName,
   silence,
   slot,
   slotStat,
+  spendEvidence,
   spell,
   summon,
   transform,
@@ -95,6 +105,20 @@ const chooseDestroy = [choose(oppFollowers()), destroy(slot())];
 const chillSkaterEffect = addToHand("エンシェントアーティファクト");
 const twinDroneEffect = summon("アナライズアーティファクト");
 const eyesEdenEffect = summon("撃針の看守");
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」の部品 ----
+
+/** 「これに【融合】していたなら」 */
+const FUSED = { kind: "fused" } as const;
+/**
+ * 「【融合】を持つカード」（人滅の資産家）: テキストに【融合】の行（「【融合】アミュレット」等）があるカード。
+ * 「これに【融合】したとき」「自分が【融合】したとき」だけのカード（ディメンションストレンジャー等）は含めない（推定）
+ */
+const FUSION_CARD_IDS = (rawCards as { id: string; text: string }[])
+  .filter((c) => (c.text ?? "").split("\n").some((line) => line.startsWith("【融合】")))
+  .map((c) => c.id);
+/** これに【融合】したとき、『神域の物証』1枚を自分の場に出す（最凶の収容・滅びの怪腕・ランペイジ） */
+const fusedEvidence = onFused(summon("神域の物証"));
 
 export const NEMESIS_ROT: Record<string, CardAbilities> = {
   // ---- 第4弾 ----
@@ -393,6 +417,66 @@ export const NEMESIS_ROT: Record<string, CardAbilities> = {
     ],
   },
 
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  // randomKeywords はエンジンで場のカードにしか働かない（手札のカードには何も付かない）ので、
+  // 「【必殺】【守護】からランダム1つ」を「ランダム1つの能力」（randomEffects）で、手札のカードへの grant として書く
+  [id("組み立て失敗")]: {
+    abilities: [
+      spell(
+        addToHandAs("改良型・操り人形", "h"),
+        randomEffects(1, [grant(slot("h"), ["bane"])], [grant(slot("h"), ["ward"])]),
+      ),
+    ],
+  },
+  // 証拠が2未満なら破壊は働かない（docs/rules.md 12章。ユーザー判断）。回復は証拠によらず働く
+  [id("最凶の収容")]: {
+    fusion: { type: "amulet" },
+    abilities: [
+      fusedEvidence,
+      spell(heal(2), spendEvidence(2, random(maxAttack(oppFollowers()), 1, "r"), destroy(slot("r")))),
+    ],
+  },
+  [id("人滅の執事")]: { abilities: [lastWords(addToHand("神域の物証", 2))] },
+  [id("人滅の資産家")]: {
+    abilities: [
+      fanfare(addToHand("神域の物証", 2)),
+      onAmuletFuse(damage(oppFollowers(), 1)),
+      onEvolve(draw(1, { ids: FUSION_CARD_IDS })),
+    ],
+  },
+  [id("ディメンションストレンジャー")]: {
+    abilities: [
+      onAllyFuse(grant(THIS, ["rush"])),
+      lastWords(crest("ディメンションストレンジャー")),
+      onSuperEvolve(grant(THIS, ["storm"])),
+    ],
+  },
+  [id("滅びの怪腕")]: {
+    fusion: { type: "amulet" },
+    abilities: [fusedEvidence, spell(when(FUSED, [damage(oppFollowers(), 8)], [damage(oppFollowers(), 4)]))],
+  },
+  [id("ランチャーキャット")]: {
+    abilities: [fanfare(summon("アタックアーティファクト"), summon("エンシェントアーティファクト"))],
+  },
+  [id("人滅の紳士")]: {
+    abilities: [
+      fanfare(addToHand("神域の物証", 2)),
+      onAmuletFuse(random(oppFollowers(), 1, "r"), destroy(slot("r")), heal(2)),
+    ],
+  },
+  // 「相手の場のそれと同名のフォロワーすべて」には選んだフォロワー自身も含む
+  [id("人滅の三悪・ランペイジ")]: {
+    fusion: { type: "amulet" },
+    abilities: [
+      fusedEvidence,
+      fanfare(
+        choose(oppFollowers()),
+        destroy(sameName(oppFollowers(), "t")),
+        when(FUSED, [halveLeaderMaxHp("opponent")]),
+      ),
+    ],
+  },
+
   // ---- トークン ----
   [id("アナライズアーティファクト")]: { abilities: [onEnter(draw(1))] },
   [id("撃針の看守")]: { abilities: [lastWords(heal(2))] },
@@ -422,5 +506,10 @@ export const NEMESIS_ROT_CRESTS: Record<string, CardAbilities> = {
   },
   [crestIdOf("束刃の咎人・カットスロート")]: {
     abilities: [oncePerOwnTurn(onAllyPlay({ type: "follower" }, evolveIt(EVENT)))],
+  },
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  // 【カウントダウン_2】はクレストのデータから読む。カウントが0になると破壊され、【ラストワード】が働く。「これ」はクレスト自身（THIS）
+  [crestIdOf("ディメンションストレンジャー")]: {
+    abilities: [onAllyFuse({ op: "countdown", target: THIS, amount: -1 }), lastWords(summon("ディメンションストレンジャー"))],
   },
 };

@@ -1023,6 +1023,9 @@ function AmuletEditor({ c, apply, setSelection }: EditorProps & { c: AmuletOnBoa
           <NumField label="カウントダウン" value={c.countdown} min={1} max={20} onCommit={(v) => set(`カウントダウンを ${v} に`, (x) => (x.countdown = v))} />
         )}
         {c.sigils !== null && <NumField label="印の数" value={c.sigils} min={1} max={20} onCommit={(v) => set(`印の数を ${v} に`, (x) => (x.sigils = v))} />}
+        {c.evidence !== undefined && (
+          <NumField label="証拠の数" value={c.evidence} min={1} max={20} onCommit={(v) => set(`証拠の数を ${v} に`, (x) => (x.evidence = v))} />
+        )}
         <CheckField label="このターンにアクトした" checked={c.actedThisTurn} onChange={(v) => set(v ? "アクトしたことに" : "アクトしていないことに", (x) => (x.actedThisTurn = v))} />
       </div>
       <MoveButtons iid={c.iid} name={card.name} zone="board" apply={apply} setSelection={setSelection} toBoard={false} />

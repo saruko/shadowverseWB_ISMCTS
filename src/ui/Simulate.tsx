@@ -46,6 +46,7 @@ const pct = (n: number, d: number) => (d === 0 ? "-" : `${Math.round((n / d) * 1
 const SELECTION_KEYS: Record<FormatId, string> = {
   starter: "svwb-sim:simulate-selection:v1",
   rotation: "svwb-sim:simulate-selection-rotation:v1",
+  rotation9: "svwb-sim:simulate-selection-rotation9:v1",
 };
 interface Selection {
   decks: string[];

@@ -366,6 +366,9 @@ pub struct CardFilter {
     #[serde(default)]
     pub earth_sigil: bool,
     // ---- ローテーションで足した条件（docs/rules.md 12章） ----
+    /// 【証拠】アミュレット（証拠・アミュレット）
+    #[serde(default)]
+    pub evidence: bool,
     pub cost_min: Option<i32>,
     /// コストがこのいずれか
     pub cost_in: Option<Vec<i32>>,
@@ -451,6 +454,16 @@ pub enum Target {
     MaxAttack {
         of: Box<Target>,
     },
+    /// コストが最小のものに絞る（手札は今のコスト、場は元のコスト）
+    MinCost {
+        of: Box<Target>,
+    },
+    /// スロットのカード（先頭）と同名のものに絞る
+    SameName {
+        of: Box<Target>,
+        #[serde(deserialize_with = "de_slot")]
+        slot: SlotId,
+    },
 }
 
 #[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -523,6 +536,14 @@ pub enum ValueObj {
     /// 同じく、その種類の数
     EnteredKinds {
         filter: Option<CardFilter>,
+    },
+    /// 自分の場の証拠の数（無ければ 0）
+    Evidence,
+    /// これの体力（場のフォロワー。手札にあれば手札の体力）
+    ThisDefense,
+    /// リーダーの体力の最大値 − 体力
+    LeaderMissingHp {
+        side: Side,
     },
 }
 
@@ -634,6 +655,11 @@ pub enum Condition {
     },
     And {
         conds: Vec<Condition>,
+    },
+    /// このターン中に自分がアミュレット（evidence なら証拠・アミュレット）を【アクト】していた
+    ActedThisTurn {
+        #[serde(default)]
+        evidence: bool,
     },
 }
 
@@ -869,6 +895,8 @@ pub enum Effect {
     },
     Discard {
         target: Target,
+        #[serde(default, deserialize_with = "de_opt_var")]
+        count_var: Option<VarId>,
     },
     Transform {
         target: Target,
@@ -1074,6 +1102,27 @@ pub enum Effect {
         target: Target,
         amount: i32,
     },
+    // ---- 第10弾で足した効果（docs/rules.md 12章） ----
+    /// 自分の場の証拠を amount 減らして then（足りなければ何も起きない。0 になったら破壊）
+    SpendEvidence {
+        amount: i32,
+        #[serde(default)]
+        then: Vec<Effect>,
+    },
+    /// 攻撃力と体力を入れ替える（場のフォロワー・手札のフォロワー）
+    SwapStats {
+        target: Target,
+    },
+    /// 攻撃力と体力をこの値にする
+    SetStats {
+        target: Target,
+        attack: Value,
+        defense: Value,
+    },
+    /// リーダーの体力の最大値を半分にする（端数は切り上げ）
+    HalveLeaderMaxHp {
+        side: Side,
+    },
 }
 
 impl Effect {
@@ -1143,6 +1192,10 @@ impl Effect {
             Effect::LeaderStatus { .. } => "LeaderStatus",
             Effect::AddLeaderMaxHp { .. } => "AddLeaderMaxHp",
             Effect::AddGauge { .. } => "AddGauge",
+            Effect::SpendEvidence { .. } => "SpendEvidence",
+            Effect::SwapStats { .. } => "SwapStats",
+            Effect::SetStats { .. } => "SetStats",
+            Effect::HalveLeaderMaxHp { .. } => "HalveLeaderMaxHp",
         }
     }
 }
@@ -1182,9 +1235,15 @@ pub enum Trigger {
     Act {
         cost: i32,
     },
-    AllyAct,
+    /// 自分がアミュレットを【アクト】したとき（filter があれば、アクトしたアミュレットがそれに合うときだけ）
+    AllyAct {
+        filter: Option<CardFilter>,
+    },
     Fused,
-    AllyFuse,
+    /// 自分が融合したとき（filter があれば、素材にそれに合うカードがあるときだけ）
+    AllyFuse {
+        filter: Option<CardFilter>,
+    },
     Spellboost,
     AllyLeaveInHand,
     Discarded,
@@ -1240,6 +1299,14 @@ pub enum Trigger {
     DirectSummoned,
     /// 自分が【土の秘術】したとき
     EarthRite,
+    // ---- 第10弾で足した誘発（docs/rules.md 12章） ----
+    /// これが場で消滅したとき
+    Banished,
+    /// 自分の（side があればその側の）カードが場で消滅したとき（event は消滅したカード。これ自身は含まない）
+    AllyBanished {
+        filter: Option<CardFilter>,
+        side: Option<Side>,
+    },
 }
 
 /// 誘発の種類（Trigger の on だけ）
@@ -1277,6 +1344,8 @@ pub enum On {
     SuperEvolved,
     DirectSummoned,
     EarthRite,
+    Banished,
+    AllyBanished,
 }
 
 impl Trigger {
@@ -1295,9 +1364,9 @@ impl Trigger {
             Trigger::AllyEnter { .. } => On::AllyEnter,
             Trigger::Enter => On::Enter,
             Trigger::Act { .. } => On::Act,
-            Trigger::AllyAct => On::AllyAct,
+            Trigger::AllyAct { .. } => On::AllyAct,
             Trigger::Fused => On::Fused,
-            Trigger::AllyFuse => On::AllyFuse,
+            Trigger::AllyFuse { .. } => On::AllyFuse,
             Trigger::Spellboost => On::Spellboost,
             Trigger::AllyLeaveInHand => On::AllyLeaveInHand,
             Trigger::Discarded => On::Discarded,
@@ -1314,6 +1383,8 @@ impl Trigger {
             Trigger::SuperEvolved => On::SuperEvolved,
             Trigger::DirectSummoned => On::DirectSummoned,
             Trigger::EarthRite => On::EarthRite,
+            Trigger::Banished => On::Banished,
+            Trigger::AllyBanished { .. } => On::AllyBanished,
         }
     }
 }
@@ -1385,6 +1456,9 @@ pub struct Card {
     pub keywords: Kw,
     pub max_attacks: i32,
     pub earth_sigil: bool,
+    /// 【証拠】アミュレット（第10弾。docs/rules.md 12章）
+    #[serde(default)]
+    pub evidence: bool,
     pub enhance: Option<i32>,
     /// 【エンハンス】の値すべて（小さい順。enhance はその最小）
     #[serde(default)]
@@ -1466,7 +1540,8 @@ fn effects_have_cond(list: &[Effect], pred: fn(&Condition) -> bool) -> bool {
         Effect::EarthRite { then, .. }
         | Effect::Necromancy { then, .. }
         | Effect::PayPp { then, .. }
-        | Effect::SpendFaith { then, .. } => effects_have_cond(then, pred),
+        | Effect::SpendFaith { then, .. }
+        | Effect::SpendEvidence { then, .. } => effects_have_cond(then, pred),
         _ => false,
     })
 }

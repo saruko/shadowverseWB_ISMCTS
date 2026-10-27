@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { ROTATION, STARTER, deckProblems } from "../src/cards";
+import { ROTATION, ROTATION_9, STARTER, deckProblems } from "../src/cards";
 import { CARDS_BY_ID } from "../src/cards";
 import { deckToText, parseDeckText } from "../src/cards/deck";
-import { DEFAULT_DECKS, DEFAULT_DECK_ERRORS, ROTATION_DECKS, ROTATION_DECK_ERRORS } from "../src/cards/defaultDecks";
+import {
+  DEFAULT_DECKS,
+  DEFAULT_DECK_ERRORS,
+  ROTATION_9_DECKS,
+  ROTATION_9_DECK_ERRORS,
+  ROTATION_DECKS,
+  ROTATION_DECK_ERRORS,
+} from "../src/cards/defaultDecks";
 import { rngFrom } from "../src/engine";
 import { isRotationDeck, randomDeck } from "../src/sim/decks";
 
@@ -48,17 +55,25 @@ describe("デフォルトデッキ（data/decks）", () => {
 });
 
 describe("ローテーションのデッキ（data/decks-rotation）", () => {
-  it("すべて読み込め、ローテーションの構築ルールを満たす", () => {
+  it("すべて読み込め、ローテーションの構築ルールを満たす（第10弾環境のデッキは 10/28 以降に作るので、まだ無くてもよい）", () => {
     expect(ROTATION_DECK_ERRORS).toEqual([]);
-    expect(ROTATION_DECKS.length).toBeGreaterThan(0);
     for (const deck of ROTATION_DECKS) {
       const cards = deck.cards.map((id) => CARDS_BY_ID.get(id)!);
       expect({ deck: deck.key, problems: deckProblems(ROTATION, deck.class, cards) }).toEqual({ deck: deck.key, problems: [] });
     }
   });
 
+  it("第9弾環境のデッキ（data/decks-rotation-9）は、すべて読み込め、第9弾環境の構築ルールを満たす", () => {
+    expect(ROTATION_9_DECK_ERRORS).toEqual([]);
+    expect(ROTATION_9_DECKS.length).toBe(14);
+    for (const deck of ROTATION_9_DECKS) {
+      const cards = deck.cards.map((id) => CARDS_BY_ID.get(id)!);
+      expect({ deck: deck.key, problems: deckProblems(ROTATION_9, deck.class, cards) }).toEqual({ deck: deck.key, problems: [] });
+    }
+  });
+
   it("ローテーションのデッキはローテーションの補正を使うデッキで、スターターのデッキは使わない（isRotationDeck）", () => {
-    for (const deck of ROTATION_DECKS) expect(isRotationDeck(deck.cards), deck.key).toBe(true);
+    for (const deck of [...ROTATION_DECKS, ...ROTATION_9_DECKS]) expect(isRotationDeck(deck.cards), deck.key).toBe(true);
     for (const deck of DEFAULT_DECKS) expect(isRotationDeck(deck.cards), deck.key).toBe(false);
   });
 

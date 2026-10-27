@@ -1341,7 +1341,17 @@ fn apply_act(s: &mut GameState, iid: Iid) {
     };
     s.players[p].pp -= cost;
     s.players[p].board.make_mut()[ai].acted_this_turn = true;
-    fire_ally_act(s, p);
+    // 「このターン中に自分が（証拠・）アミュレットを【アクト】していたなら」（第10弾。ローテーションの対戦だけ記録する）
+    if s.players[p].ext.rotation {
+        let turn = s.turn;
+        let evidence = s.players[p].board[ai].evidence.is_some();
+        let ext = &mut s.players[p].ext;
+        ext.acted_amulet_turn = turn;
+        if evidence {
+            ext.acted_evidence_turn = turn;
+        }
+    }
+    fire_ally_act(s, p, iid);
     push_abilities(s, &[ability], &Ctx::new(p, iid));
 }
 
@@ -1353,12 +1363,14 @@ fn apply_fuse(s: &mut GameState, host_iid: Iid, materials: &[Iid]) {
     let hand = s.players[p].hand.make_mut();
     // 素材（手札の順）のコストを足し、種類を融合先に記録してから、手札から除く
     let mut fused_cost = 0;
+    let mut material_cards = Vec::new();
     for j in 0..hand.len() {
         if !materials.contains(&hand[j].iid) {
             continue;
         }
         fused_cost += hand_cost(&hand[j]);
         let kind = hand[j].card;
+        material_cards.push(kind);
         let host = &mut hand[hi];
         if !host.fused_kinds.contains(&kind) {
             host.fused_kinds.push(kind);
@@ -1373,6 +1385,6 @@ fn apply_fuse(s: &mut GameState, host_iid: Iid, materials: &[Iid]) {
     // 「融合したカードのコスト」は手札で変化したコスト（docs/rules.md の「コスト」と「元のコスト」）
     ctx.set_var(d.var_fused_cost, fused_cost);
     ctx.set_var(d.var_fused_kinds, n_kinds);
-    fire_ally_fuse(s, p);
+    fire_ally_fuse(s, p, &material_cards);
     push_own_abilities(s, host_card, On::Fused, &ctx);
 }

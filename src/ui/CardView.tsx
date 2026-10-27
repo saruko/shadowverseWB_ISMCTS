@@ -121,6 +121,7 @@ export function CardView({
         )}
         {board?.kind === "amulet" && board.countdown !== null && <span class="badge">CD {board.countdown}</span>}
         {board?.kind === "amulet" && board.sigils !== null && <span class="badge">印 {board.sigils}</span>}
+        {board?.kind === "amulet" && board.evidence !== undefined && <span class="badge">証拠 {board.evidence}</span>}
         {hand && hand.x !== null && <span class="badge">X {hand.x}</span>}
         {hand && hand.boosts > 0 && hasSpellboost(cardId) && <span class="badge">SB {hand.boosts}</span>}
       </div>

@@ -15,11 +15,11 @@ interface Props {
   onChange: (decks: SavedDeck[]) => void;
 }
 
-/** 今のフォーマットで使えないデッキに付ける説明（もう一方のフォーマットで使えるならそれを書く） */
+/** 今のフォーマットで使えないデッキに付ける説明（ほかのフォーマットで使えるならそれを書く） */
 function unplayableNote(format: FormatId, deck: Deck): string {
   if (isPlayableIn(format, deck)) return "";
-  const other: FormatId = format === "starter" ? "rotation" : "starter";
-  return isPlayableIn(other, deck) ? `（${FORMATS[other].name}用）` : "（未完成）";
+  const other = (Object.keys(FORMATS) as FormatId[]).find((f) => f !== format && isPlayableIn(f, deck));
+  return other ? `（${FORMATS[other].name}用）` : "（未完成）";
 }
 
 type Editing = { id: string | null; deck: Deck };

@@ -19,7 +19,11 @@ const OPPONENTS: Record<string, string> = {
 };
 
 /** 対戦の設定の保存先（フォーマットごと） */
-const SETUP_KEYS: Record<FormatId, string> = { starter: "svwb-sim:setup:v1", rotation: "svwb-sim:setup-rotation:v1" };
+const SETUP_KEYS: Record<FormatId, string> = {
+  starter: "svwb-sim:setup:v1",
+  rotation: "svwb-sim:setup-rotation:v1",
+  rotation9: "svwb-sim:setup-rotation9:v1",
+};
 interface Setup {
   me: DeckChoice;
   ai: DeckChoice;
@@ -29,7 +33,7 @@ function loadSetup(format: FormatId): Setup {
   // ローテーションは、ランダムなデッキより環境のデッキの方が試合らしくなるので、最初はデフォルトデッキの先頭 2 つ
   const [d0, d1] = formatDecks(format);
   const fallback: Setup =
-    format === "rotation" && d0 && d1
+    format !== "starter" && d0 && d1
       ? { me: defaultDeckChoice(format, d0.key), ai: defaultDeckChoice(format, d1.key), agent: "search" }
       : { me: "random:elf", ai: "random:royal", agent: "greedy" };
   try {

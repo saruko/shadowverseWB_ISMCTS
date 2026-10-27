@@ -186,6 +186,8 @@ pub struct OnBoard {
     // アミュレット
     pub countdown: Option<i32>,
     pub sigils: Option<i32>,
+    /// 【証拠】アミュレットの証拠の数（第10弾）
+    pub evidence: Option<i32>,
     pub acted_this_turn: bool,
     /// ローテーションで足した状態（既定値なら書き出さない）
     pub ext: BoardExt,
@@ -308,6 +310,9 @@ pub struct PlayerExt {
     pub leader_cap: Option<(i32, i32, i32)>,
     /// リーダーの受けるダメージの加算
     pub leader_plus: i32,
+    /// 自分がアミュレット・証拠・アミュレットを最後に【アクト】したターン数（0 は無し。「このターン中に…アクトしていたなら」）
+    pub acted_amulet_turn: i32,
+    pub acted_evidence_turn: i32,
 }
 
 impl PlayerExt {
@@ -837,6 +842,7 @@ impl GameState {
             used_once: Vec::new(),
             countdown: None,
             sigils: None,
+            evidence: None,
             acted_this_turn: false,
             ext: BoardExt::default(),
         };
@@ -862,6 +868,7 @@ impl GameState {
                 None
             };
             b.sigils = if cd.earth_sigil { Some(1) } else { None };
+            b.evidence = if cd.evidence { Some(1) } else { None };
         }
         b
     }

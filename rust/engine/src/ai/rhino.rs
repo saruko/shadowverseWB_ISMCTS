@@ -587,7 +587,9 @@ fn effects_may_hit_own_leader(effs: &[crate::data::Effect], depth: u32) -> bool 
                 .find(|e| e.0 == *slot)
                 .is_none_or(|e| hits(e.1, slots)),
             Target::Union { of } => of.iter().any(|x| hits(x, slots)),
-            Target::MaxAttack { of } => hits(of, slots),
+            Target::MaxAttack { of } | Target::MinCost { of } | Target::SameName { of, .. } => {
+                hits(of, slots)
+            }
             Target::Event => true,
         }
     }

@@ -758,7 +758,10 @@ impl<'a> World<'a> {
                 | On::EnemyAttack
                 | On::SuperEvolved
                 | On::DirectSummoned
-                | On::EarthRite,
+                | On::EarthRite
+                // 第10弾で足した誘発も見積もらない
+                | On::Banished
+                | On::AllyBanished,
             ) => -1,
         }
     }
@@ -869,6 +872,7 @@ impl<'a> World<'a> {
                 .iter()
                 .fold(Ti::default(), |a, x| a.union(self.ti(x, fr))),
             Target::MaxAttack { of } => self.ti(of, fr).single(1),
+            Target::MinCost { of } | Target::SameName { of, .. } => self.ti(of, fr),
             // 山札のカードの強化・クレストの破壊（ラストワード）は見積もらない
             Target::Deck { .. } | Target::Crests { .. } => Ti {
                 unknown: true,
@@ -897,7 +901,9 @@ impl<'a> World<'a> {
                 None => 2 * BOARD_LIMIT as i32,
             },
             Target::Union { of } => of.iter().fold(0, |a, x| add(a, self.count_bound(x, fr))),
-            Target::MaxAttack { of } => self.count_bound(of, fr),
+            Target::MaxAttack { of } | Target::MinCost { of } | Target::SameName { of, .. } => {
+                self.count_bound(of, fr)
+            }
         }
     }
 
@@ -971,9 +977,14 @@ impl<'a> World<'a> {
                         self.walk(s, p, o, m, fr, acc);
                     }
                 }
-                Effect::PayPp { then, .. } | Effect::SpendFaith { then, .. } => {
+                Effect::PayPp { then, .. }
+                | Effect::SpendFaith { then, .. }
+                | Effect::SpendEvidence { then, .. } => {
                     self.walk(s, p, then, m, fr, acc);
                 }
+                // 攻撃力・体力・リーダーの体力の最大値を変えるもの（見積もらない）
+                Effect::SwapStats { .. } | Effect::SetStats { .. } => acc.unk("SetStats"),
+                Effect::HalveLeaderMaxHp { .. } => acc.unk("HalveLeaderMaxHp"),
                 // 顔へのダメージ・攻撃回数・出せるカードを増やしうるもの（見積もらない）
                 Effect::Copy { .. } => acc.unk("Copy"),
                 Effect::TriggerOwn { .. } => acc.unk("TriggerOwn"),

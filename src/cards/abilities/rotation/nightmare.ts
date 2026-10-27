@@ -5,6 +5,8 @@ import {
   BOTH_LEADERS,
   ENHANCED,
   EVENT,
+  EVIDENCE,
+  EVIDENCE_AMULET,
   FROM_THIS,
   MIN_HP_LEADERS,
   OPP_LEADER,
@@ -49,6 +51,7 @@ import {
   mode,
   modePick,
   necromancy,
+  onAllyBanished,
   onAllyEnter,
   onAllyPlay,
   onAttack,
@@ -69,6 +72,7 @@ import {
   summon,
   transform,
   union,
+  v,
   when,
 } from "../helpers";
 
@@ -99,6 +103,12 @@ const SHAKUDOU: Effect[] = [
 ];
 // 鉄鎖の繋がり: 「相手の場のフォロワーからランダム1枚に3ダメージ。リーダーすべてに1ダメージ。」
 const TESSA: Effect[] = [random(oppFollowers()), damage(slot(), 3), damage(BOTH_LEADERS, 1)];
+
+// ---- 第10弾「ニーゲルヘリア神殺事件」で使う効果 ----
+/** 『神域の物証』1枚を自分の場に出す。『神域の物証』1枚を自分の手札に加える（遺言の聴取・告別の納棺師） */
+const TESTIMONY: Effect[] = [summon("神域の物証"), addToHand("神域の物証")];
+/** 『ゴースト』1枚を自分の場に出す。それは【必殺】を持つ（残思探偵・ノクターン・鬼録の看護師） */
+const BANE_GHOST: Effect[] = [summon("ゴースト", 1, "g"), grant(slot("g"), ["bane"])];
 
 export const NIGHTMARE_ROT: Record<string, CardAbilities> = {
   // ---- 第4弾 ----
@@ -372,6 +382,58 @@ export const NIGHTMARE_ROT: Record<string, CardAbilities> = {
     ],
   },
 
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  [id("ソウルランナウェイ")]: { abilities: [spell(addToHand("ゴースト"))] },
+  [id("遺言の聴取")]: { abilities: [spell(...TESTIMONY)] },
+  // X（自分の場の証拠の数）を先に決めてから、証拠・アミュレットすべてを消滅させる
+  [id("ノクターンの尋問")]: {
+    abilities: [
+      spell(
+        { op: "setVar", name: "x", value: EVIDENCE },
+        damage(oppFollowers(), v("x")),
+        banish(allyCards(EVIDENCE_AMULET)),
+      ),
+    ],
+  },
+  [id("告別の納棺師")]: { abilities: [lastWords(...TESTIMONY)] },
+  [id("ドゥームズチェンジ・グレモリー")]: {
+    abilities: [lastWords(necromancy(2, draw(1))), onEvolve(crest("ドゥームズチェンジ・グレモリー"))],
+  },
+  [id("リベンジゴート")]: { abilities: [lastWords(damage(SELF_LEADER, 2))] },
+  // 「自分のカードが場で消滅したとき」は証拠の合算で消える証拠・アミュレットも数える（docs/rules.md 12章）
+  [id("永住の墓守")]: {
+    abilities: [
+      fanfare(summon("腐臭のゾンビ")),
+      onAllyBanished(
+        {},
+        when(OWN_TURN, [
+          random(allyFollowers({ tribe: "死者" }), 1, "r"),
+          buff(slot("r"), 2, 2),
+          grant(slot("r"), ["rush"]),
+        ]),
+      ),
+      onEvolve(summon("神域の物証")),
+    ],
+  },
+  [id("残思探偵・ノクターン")]: {
+    abilities: [
+      fanfare(...BANE_GHOST),
+      onAllyBanished(
+        {},
+        when(OWN_TURN, [summon("スケルトン", 1, "s"), buff(slot("s"), 2, 4), grant(slot("s"), ["ward"])]),
+      ),
+      onEvolve(addToHand("遺言の聴取")),
+    ],
+  },
+  [id("レスティブケンタウロス")]: { abilities: [onAttack(necromancy(4, damage(oppFollowers(), 4)))] },
+  [id("鬼録の看護師")]: {
+    abilities: [
+      fanfare(...BANE_GHOST),
+      onAllyBanished({}, when(OWN_TURN, [heal(2)])),
+      onSuperEvolve(...BANE_GHOST),
+    ],
+  },
+
   // ---- トークン ----
   [id("腐臭のゾンビ")]: {
     abilities: [lastWords(summon("腐臭のゾンビ", 1, "s"), loseLastWords(slot("s")))],
@@ -407,4 +469,6 @@ export const NIGHTMARE_ROT_CRESTS: Record<string, CardAbilities> = {
       ),
     ],
   },
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  [crestIdOf("ドゥームズチェンジ・グレモリー")]: { abilities: [onTurnEnd({ op: "addGraveyard", amount: 2 })] },
 };

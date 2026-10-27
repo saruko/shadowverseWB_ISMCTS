@@ -8,10 +8,14 @@ import {
   OWN_TURN,
   RELEASED_ULTIMATE,
   SELF_LEADER,
+  FROM_THIS,
   SUPER_EVOLVE_TURN,
   THIS,
+  THIS_ATTACK,
+  THIS_DEFENSE,
   THIS_EVOLVED,
   ULTIMATE,
+  actedThisTurn,
   addFaith,
   addToHand,
   addToHandAs,
@@ -21,11 +25,13 @@ import {
   banish,
   buff,
   choose,
+  copy,
   count,
   countAtLeast,
   crest,
   crestIdOf,
   crestsOf,
+  cycleEffects,
   damage,
   destroy,
   discard,
@@ -53,6 +59,7 @@ import {
   onAttack,
   onDrawn,
   onEnhancePlay,
+  onEvidenceAct,
   onEvolve,
   onEvolved,
   onSuperEvolve,
@@ -65,13 +72,17 @@ import {
   repeat,
   returnToDeck,
   setCost,
+  setStats,
   slot,
   slotMatches,
   spell,
   spendFaith,
+  sub,
   summon,
   superEvolveIt,
+  swapStats,
   union,
+  valueAtLeast,
   when,
 } from "../helpers";
 
@@ -96,6 +107,16 @@ const noAttackUntilOppTurnEnd = (target: Target = slot()): Effect => ({
 const nachtEffects: Effect[] = [summon("ナハトの私兵"), damage(oppFollowers(), 3)];
 // 波濤の副船長（【進化時】は【ファンファーレ】と同じ能力）
 const firstMateEffects: Effect[] = [...chooseDamage(3), summon(FLAG)];
+
+// ---- 第10弾の共通部品 ----
+const CLUE = "神域の物証";
+const NEWSBOY = "無垢なる新聞売り";
+/** 手札で働く。自分が証拠・アミュレットを【アクト】したとき、これの攻撃力と体力を入れ替える。これは+1/+0する */
+const swapInHand = inHand(onEvidenceAct(swapStats(THIS), buff(THIS, 1, 0)));
+// 変心の衛士（【超進化時】は【ファンファーレ】と同じ能力）
+const turncoatEffects: Effect[] = [
+  when(countAtLeast(allyAmulets(), 1), [choose(oppFollowers()), banish(slot())]),
+];
 
 export const ROYAL_ROT: Record<string, CardAbilities> = {
   // ---- 第4弾 ----
@@ -385,6 +406,67 @@ export const ROYAL_ROT: Record<string, CardAbilities> = {
     abilities: [fanfare(summon(FLAG), countdownOf(allyAmulets({ ids: [id(FLAG)] }), -5))],
   },
 
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  [id("ノー・ライフの問答")]: {
+    abilities: [spell(summon(CLUE), when(actedThisTurn(true), [summon(NEWSBOY)]))],
+  },
+  [id(NEWSBOY)]: {
+    // 「これのコピー」は同名のカード（手札で入れ替え・+1/+0 した攻撃力・体力は写さない）
+    abilities: [swapInHand, fanfare(when(ENHANCED, [copy(FROM_THIS, 1, "board")])), lastWords(summon(CLUE))],
+  },
+  [id("表裏の現場検証")]: {
+    abilities: [spell(choose(oppFollowers()), when(actedThisTurn(true), [damage(slot(), 10)], [damage(slot(), 5)]))],
+  },
+  [id("チーキーデザイナー")]: {
+    abilities: [
+      swapInHand,
+      // X はプレイしたとき（場に出た後）のこれの攻撃力（手札で入れ替え・+1/+0 したものを含む）
+      fanfare(choose(oppFollowers()), damage(slot(), THIS_ATTACK), summon(CLUE)),
+      onEvolve(summon(NEWSBOY)),
+    ],
+  },
+  [id("千金の大参謀・アルメリゼ")]: {
+    abilities: [
+      fanfare(addToHand("輝く金貨")),
+      onEvolve(crest("千金の大参謀・アルメリゼ")),
+      // 超進化では【進化時】（クレストを持つ）の後に働く
+      onSuperEvolve(countdownOf(crestsOf("self", "千金の大参謀・アルメリゼ"), 2)),
+    ],
+  },
+  [id("ジュエルレディー")]: {
+    abilities: [
+      fanfare(addToHand("黄金の首飾り")),
+      oncePerOwnTurn(onAllyPlay(spellCard, damage(union(oppFollowers(), OPP_LEADER), 2))),
+    ],
+  },
+  [id("安穏の好事家")]: {
+    abilities: [
+      swapInHand,
+      // X/Y はプレイしたとき（場に出た後）のこれの攻撃力/体力
+      fanfare(summon(NEWSBOY, 2, "s"), setStats(slot("s"), THIS_ATTACK, THIS_DEFENSE)),
+      onEvolve(grant(otherAllyFollowers(), ["bane"])),
+    ],
+  },
+  [id("突撃の号令")]: {
+    abilities: [spell(summon("スティールナイト", 2, "s"), evolveIt(slot("s")), grant(slot("s"), ["barrier"]))],
+  },
+  [id("変心の衛士")]: {
+    // 「自分の場にアミュレットがあるなら」は証拠・アミュレットを含む
+    abilities: [fanfare(...turncoatEffects), onSuperEvolve(...turncoatEffects)],
+  },
+  [id("表裏探偵・ノー・ライフ")]: {
+    abilities: [
+      swapInHand,
+      // 「これのコピー」は同名のカード（元の 5/6）。比べるのはコピーを出した後のこれ（場に出た後）の攻撃力と体力。
+      // 等しいならどちらも働かない
+      fanfare(
+        copy(FROM_THIS, 1, "board", { slot: "c" }),
+        when(valueAtLeast(sub(THIS_DEFENSE, THIS_ATTACK), 1), [grant(slot("c"), ["bane"]), grant(THIS, ["drain"])]),
+        when(valueAtLeast(sub(THIS_ATTACK, THIS_DEFENSE), 1), [grant(slot("c"), ["ward"]), grant(THIS, ["storm"])]),
+      ),
+    ],
+  },
+
   // ---- トークン ----
   [id("戦慄の海賊旗")]: {
     abilities: [onAllyPlay(spellCard, countdownOf(THIS, -1)), lastWords(damage(OPP_LEADER, 2))],
@@ -406,5 +488,17 @@ export const ROYAL_ROT_CRESTS: Record<string, CardAbilities> = {
   [crestIdOf("威風の行軍")]: { abilities: [onEnhancePlay(summon("勇烈の兵士"))] },
   [crestIdOf("統音のアナテマ・ギルダリア")]: {
     abilities: [onAllyEnter({ type: "follower" }, when(OWN_TURN, [damage(OPP_LEADER, 1)]))],
+  },
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  // 【カウントダウン_2】（初期値は crests.json から）。自分のターン終了時、下記の能力から順に1つ
+  [crestIdOf("千金の大参謀・アルメリゼ")]: {
+    abilities: [
+      onTurnEnd(
+        cycleEffects(
+          [addToHandAs("黄金の小剣", "h"), setCost(slot("h"), 0)],
+          [addToHandAs("黄金の杯", "h"), setCost(slot("h"), 0)],
+        ),
+      ),
+    ],
   },
 };

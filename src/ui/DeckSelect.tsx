@@ -2,13 +2,12 @@
 
 import { CLASS_NAMES } from "../cards";
 import { DECK_CLASSES, type DeckClass } from "../cards/deck";
-import { DEFAULT_DECKS, ROTATION_DECKS } from "../cards/defaultDecks";
 import type { Rng } from "../engine";
 import { randomDeck } from "../sim/decks";
 import { defaultDeckChoice, formatDecks, FORMATS, isPlayableIn, type FormatId } from "./format";
 import type { SavedDeck } from "./storage";
 
-/** デッキの選択肢: "saved:<id>" / "default:<key>"（スターター）/ "rotation:<key>"（ローテーション）/ "random:<class>" */
+/** デッキの選択肢: "saved:<id>" / "default:<key>"（スターター）/ "rotation:<key>"・"rotation9:<key>"（ローテーション）/ "random:<class>" */
 export type DeckChoice = string;
 
 /** 選んだデッキのカード（ランダムならそのフォーマットのカードから rng で作る）。見つからないか、そのフォーマットで使えなければ null */
@@ -18,8 +17,7 @@ export function resolveDeck(choice: DeckChoice, saved: readonly SavedDeck[], rng
     const d = saved.find((x) => x.id === value);
     return d && isPlayableIn(format, d) ? d.cards : null;
   }
-  if (kind === "default" && format === "starter") return DEFAULT_DECKS.find((x) => x.key === value)?.cards ?? null;
-  if (kind === "rotation" && format === "rotation") return ROTATION_DECKS.find((x) => x.key === value)?.cards ?? null;
+  if (kind === (format === "starter" ? "default" : format)) return formatDecks(format).find((x) => x.key === value)?.cards ?? null;
   if (kind === "random" && DECK_CLASSES.includes(value as DeckClass)) return randomDeck(value as DeckClass, rng, FORMATS[format]);
   return null;
 }

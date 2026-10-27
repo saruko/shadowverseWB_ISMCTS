@@ -32,6 +32,10 @@ import {
   destroyedCards,
   directSummon,
   discard,
+  FROM_THIS,
+  onBanished,
+  spendEvidence,
+  summonOpp,
   draw,
   drawAs,
   eventStat,
@@ -75,6 +79,12 @@ import {
 
 /** 自分の場のフォロワーすべてと自分のリーダーを1回復（ユニ・サンダルフォンのクレスト） */
 const healAllies: Effect = heal(1, union(allyFollowers(), SELF_LEADER));
+
+/** 証拠・アミュレットの【アクト】（コスト1。自分のデッキから1枚を引く。自分の場の証拠を-1する。第10弾） */
+export const evidenceAct = act(1, draw(1), spendEvidence(1));
+
+/** 信心の天使・デュナメス: 相手の場のフォロワー1枚を選ぶ。それに2ダメージ。『神域の物証』1枚を自分の手札に加える */
+const dunamesEffects: Effect[] = [choose(oppFollowers()), damage(slot(), 2), addToHand("神域の物証")];
 
 /** 忘失の無垢・アイカ: このバトル中に破壊された自分のフォロワーからランダム1枚と同名のカードを非公開で手札に */
 const aikaEffects: Effect[] = [copy(destroyedCards({ type: "follower" }), 1, "hand", { hidden: true })];
@@ -282,6 +292,29 @@ export const NEUTRAL_ROT: Record<string, CardAbilities> = {
   [id("途絶した輪廻・ゼラエル")]: {
     abilities: [inDeck(onTurnEnd(when(PLAYED_1_TO_8, [directSummon]))), fanfare(choose(oppFollowers()), damage(slot(), 9))],
   },
+
+  // ---- 第10弾「ニーゲルヘリア神殺事件」 ----
+  [id("理想郷・ニーゲルヘリア")]: {
+    abilities: [onBanished(heal(2)), evidenceAct],
+  },
+  [id("神域の物証")]: {
+    abilities: [evidenceAct],
+  },
+  [id("愛の天使・エクシアス")]: {
+    abilities: [fanfare(addToHand("神域の物証"))],
+  },
+  [id("信心の天使・デュナメス")]: {
+    abilities: [fanfare(...dunamesEffects), onEvolve(...dunamesEffects)],
+  },
+  [id("希求の天使・キュリオス")]: {
+    abilities: [fanfare(damage(oppFollowers(), 2), addToHand("神域の物証", 2))],
+  },
+  [id("神殺現場")]: {
+    abilities: [onTurnEnd(random(oppFollowers(), 1, "r"), banish(slot("r")), summonOpp("神域の物証"))],
+  },
+  [id("理想郷の神・レゼアル")]: {
+    abilities: [fanfare(choose(oppFollowers()), damage(slot(), 9)), onSuperEvolve(crest("理想郷の神・レゼアル"))],
+  },
 };
 
 /** このクラスのカードが与えるクレストの能力（キーは crestIdOf("カード名")） */
@@ -291,5 +324,12 @@ export const NEUTRAL_ROT_CRESTS: Record<string, CardAbilities> = {
   },
   [crestIdOf("特記標的・ヘイレムハニィ")]: {
     abilities: [lastWords(summon("特記標的・ヘイレムハニィ", 1, "s"), evolveIt(slot("s")))],
+  },
+  // 自分がフォロワーをプレイしたとき、それは「【ラストワード】これと同名のカード1枚を自分の場に出す。」を持つ。
+  // ターン終了まで、それは「フォロワーやリーダーを攻撃できない。」を持つ
+  [crestIdOf("理想郷の神・レゼアル")]: {
+    abilities: [
+      onAllyPlay({ type: "follower" }, grantAbilities(EVENT, [lastWords(copy(FROM_THIS, 1, "board"))]), grantNoAttack(EVENT, "endOfTurn")),
+    ],
   },
 };
