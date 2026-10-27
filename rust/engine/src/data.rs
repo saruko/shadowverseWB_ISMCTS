@@ -1465,8 +1465,10 @@ pub struct Card {
     pub enhance_levels: Vec<i32>,
     /// デッキに入れられない生成専用カード
     pub token: bool,
-    /// スターターのデッキに入れられる（ランダムなデッキ・環境の案はこのカードから作る）
+    /// スターターのデッキに入れられる（ランダムなデッキと、スターターのデッキの環境の案はこのカードから作る）
     pub starter: bool,
+    /// 今のローテーションのデッキに入れられる（ローテのデッキの環境の案はこのカードから作る）
+    pub rotation: bool,
 }
 
 #[derive(Deserialize, Debug)]

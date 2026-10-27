@@ -533,10 +533,13 @@ fn candidates(
     pool: Option<&[CardIdx]>,
 ) -> Vec<Vec<(CardIdx, i32)>> {
     let class = deck_class(cards);
+    // ローテのデッキ（スターターに入れられないカードがある。game.rs の ext.rotation と同じ見分け方）なら、今のローテーションのカードから足す
+    let rotation = cards.iter().any(|&x| !card(x).starter);
     let mut out = Vec::new();
     for (i, c) in data().cards.iter().enumerate() {
         let y = i as CardIdx;
-        if !c.starter || (c.class != class && c.class != ClassId::Neutral) {
+        let legal = if rotation { c.rotation } else { c.starter };
+        if !legal || (c.class != class && c.class != ClassId::Neutral) {
             continue;
         }
         if pool.is_some_and(|p| !p.contains(&y)) {
@@ -1522,6 +1525,16 @@ mod tests {
         let only = candidates(&cards, &cuts, Some(&[edel]));
         assert_eq!(only.len(), 1);
         assert_eq!(only[0].last(), Some(&(edel, 2)));
+        // ローテのデッキなら、足すカードは今のローテーションのカード（第1弾はほぼ入らず、第5弾より後が入る）
+        let mut rot = cards.clone();
+        rot[0] = find_card("迷歌探偵・ノインハウエル").unwrap();
+        let adds: Vec<_> = candidates(&rot, &cuts, None)
+            .iter()
+            .map(|ch| card(ch.last().unwrap().0))
+            .collect();
+        assert!(adds.len() > 20, "{}", adds.len());
+        assert!(adds.iter().all(|c| c.rotation));
+        assert!(adds.iter().any(|c| !c.starter));
     }
 
     #[test]
